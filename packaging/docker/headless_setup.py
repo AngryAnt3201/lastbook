@@ -85,6 +85,35 @@ def stamp(lib, pack):
                                             'installed': time.strftime('%Y-%m-%dT%H:%M:%S')})
 
 
+def same_pack(lib, pack, map_id=None, address_id=None):
+    """None if the library at `lib` holds exactly this pack (and map and address search), else why not. Setup's own pack.json
+    names the pack and, for a pack with revisions, its content revision, which setup checks when it unpacks. A pack without
+    revisions (All) keeps the same file names from one release to the next, so only the SHA-256s in our stamp, written
+    after an install we made, tell its releases apart; without one it cannot be shown to match."""
+    lib = Path(lib)
+    try:
+        meta = json.loads((lib / 'pack.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return 'it has no readable pack.json'
+    if meta.get('name') != pack['id']:
+        return f'it holds the {meta.get("name")!r} pack, not {pack["id"]!r}'
+    if pack.get('revision'):
+        if meta.get('content_revision') != pack['revision']:
+            return f'it holds revision {meta.get("content_revision")!r}, not {pack["revision"]!r}'
+    else:
+        try:
+            ours = json.loads((lib / STAMP).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return f'the {pack["id"]!r} pack has no revisions and this library has no {STAMP} to show which release it is'
+        if [f.get('sha256') for f in ours.get('files', [])] != [f['sha256'] for f in pack['files']]:
+            return f'{STAMP} records another release of {pack["id"]!r}'
+    if map_id and install.map_name(lib) != map_id:
+        return f'its map is {install.map_name(lib)!r}, not {map_id!r}'
+    if address_id and not (lib / 'derived' / 'geo' / 'addresses' / f'{address_id}.sqlite').is_file():
+        return f'it has no {address_id} address search'
+    return None
+
+
 def cmd_install(a):
     if install.is_library(DATA):
         log(f'{DATA} is already a library; nothing to do')
@@ -112,28 +141,36 @@ def cmd_stage(a):
         sys.exit(f'no pack {a.pack!r} in the manifest')
     target = into / install.DATA_NAME
     # A separate target skips setup's own carry-over of the open library's state map and address search, so name
-    # them: the same ones as now, unless --map asks for another. 'base' and 'us' come with their pack.
+    # them. The state map only for the same pack, as setup does (another pack brings its own maps: All has the whole
+    # US), unless --map asks for one; the address search always.
     cur = setup.current_info() or {}
-    map_id = a.map or (cur.get('map') if cur.get('map') not in (None, 'base', 'us') else None)
+    same = cur.get('pack') == pack['id']
+    map_id = a.map or (cur.get('map') if same and cur.get('map') not in (None, 'base', 'us') else None)
     have = cur.get('address_indexes') or []
     address_id = None if a.map else map_id if map_id in have else next(iter(have), None)   # None: setup uses the map's own
     if len(have) > 1:
         log(f'only one address search moves with a pack; keeping {address_id}, not {", ".join(x for x in have if x != address_id)}')
+    installed = False
     if install.is_library(target):
-        log(f'{target} is already built')
+        why = same_pack(target, pack, map_id, address_id)
+        if why:      # never relabel what is there: it stays as it is, and nothing is downloaded over it
+            sys.exit(f'{target} is already a library, but not this one: {why}. Move it away or delete it, then stage again.')
+        log(f'{target} already holds {pack["title"]}' + (f' revision {pack["revision"]}' if pack.get('revision') else '') + '; using it')
     else:
         log(f'staging {pack["title"]} into {target}' + (f' with the {map_id} map' if map_id else '')
             + (f' and {address_id} address search' if address_id else ''))
         run(setup, lambda: setup.start(a.pack, folder=str(into), map_id=map_id, address_id=address_id))
         lib, note = api.startup(SETTINGS)   # the finished job only stages the rename into `target`; this makes it
         api.opened(SETTINGS, target, note)
+        installed = True
     if not install.is_library(target):
         sys.exit(f'setup finished but {target} is not a library')
     key = DATA / 'derived' / 'lan-key'      # links holding the access key keep working after the swap
     if key.is_file() and not (target / 'derived' / 'lan-key').exists():
         (target / 'derived').mkdir(parents=True, exist_ok=True)
         shutil.copy2(key, target / 'derived' / 'lan-key')
-    stamp(target, pack)
+    if installed or not (target / STAMP).exists():
+        stamp(target, pack)  # setup just installed it, or a reused one whose revision pack.json shows
     log('staged')
 
 
