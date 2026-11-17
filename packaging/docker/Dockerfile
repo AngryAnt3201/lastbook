@@ -13,9 +13,15 @@ RUN apt-get update \
 COPY packaging/linux/requirements_linux.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
+# Only what the server runs, path by path (Dockerfile.dockerignore keeps the rest out of the context too): no
+# .git, no local settings, no library, model or generated files. Deleting them in a later step would leave them in
+# an earlier layer.
 WORKDIR /opt/lastbook
-COPY . /opt/lastbook/
-RUN rm -rf .git website website-next derived/app-build derived/release
+COPY server.py assistant.py retrieval.py llm_local.py LICENSE THIRD_PARTY_NOTICES.md ./
+COPY engine/ engine/
+COPY web/ web/
+COPY content/ content/
+COPY packaging/docker/ packaging/docker/
 
 # /data holds LastbookData/ and setup's work folder LastbookData.setup/ beside it. Switching to a new library is one
 # rename between the two, so mount /data, not LastbookData itself.

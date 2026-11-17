@@ -69,7 +69,8 @@ docker exec lastbook curl -s http://127.0.0.1:8890/api/setup/state
 
 `headless_setup.py status` says `"update_available": true` when the published pack's files differ from the ones this
 library was installed from. To move to it without stopping the server, build the new one beside it, then swap the
-folders with the container stopped:
+folders with the container stopped. `stage` brings the open library's state map and its address search along (or
+another state's with `--map ST`), and the access key:
 
 ```bash
 docker exec lastbook python3 /opt/lastbook/packaging/docker/headless_setup.py stage --into /data/next --pack all
@@ -80,6 +81,21 @@ docker start lastbook        # then delete LastbookData.old
 ```
 
 A newer version of Lastbook itself is a `git pull` and a rebuild.
+
+## What goes into the image
+
+Only the server's own files: `server.py`, `assistant.py`, `retrieval.py`, `llm_local.py`, `engine/`, `web/`, `content/`
+and `packaging/docker/`, each named in its own `COPY`. `Dockerfile.dockerignore`, an allowlist beside the Dockerfile,
+keeps everything else out of the build context, and keeps settings, keys, `.env` files, `web/home-area.json` and
+caches out even inside those folders. To check a build:
+
+```bash
+bash packaging/docker/check_image.sh
+```
+
+It places harmless sentinel files where private or local files would be (`.git`, `.env`, a library, a model, settings,
+credentials, `web/home-area.json`, `__pycache__`), builds the image, saves it, and looks through every layer and the
+image metadata for them by path and by content. Then it removes the files it made.
 
 ## Code in the library folder
 

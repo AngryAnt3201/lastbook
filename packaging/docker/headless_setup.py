@@ -6,12 +6,14 @@ Drives engine/setup/api.py's Setup exactly as the setup screen does, so download
 switched in with one rename. A job that stops (container restart, network) is picked up again on the next run.
 
   headless_setup.py install [--pack all] [--map ST]       first run: build $LASTBOOK_DATA
-  headless_setup.py stage --into DIR [--pack all]         build a fresh library in DIR/LastbookData beside the open one
+  headless_setup.py stage --into DIR [--pack all] [--map ST]   build a fresh library in DIR/LastbookData beside the open one,
+                                                          with the open one's state map and address search
   headless_setup.py status                                the manifest's packs, and what is installed
 """
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -109,15 +111,28 @@ def cmd_stage(a):
     if not pack:
         sys.exit(f'no pack {a.pack!r} in the manifest')
     target = into / install.DATA_NAME
+    # A separate target skips setup's own carry-over of the open library's state map and address search, so name
+    # them: the same ones as now, unless --map asks for another. 'base' and 'us' come with their pack.
+    cur = setup.current_info() or {}
+    map_id = a.map or (cur.get('map') if cur.get('map') not in (None, 'base', 'us') else None)
+    have = cur.get('address_indexes') or []
+    address_id = None if a.map else map_id if map_id in have else next(iter(have), None)   # None: setup uses the map's own
+    if len(have) > 1:
+        log(f'only one address search moves with a pack; keeping {address_id}, not {", ".join(x for x in have if x != address_id)}')
     if install.is_library(target):
         log(f'{target} is already built')
     else:
-        log(f'staging {pack["title"]} into {target}')
-        run(setup, lambda: setup.start(a.pack, folder=str(into)))
+        log(f'staging {pack["title"]} into {target}' + (f' with the {map_id} map' if map_id else '')
+            + (f' and {address_id} address search' if address_id else ''))
+        run(setup, lambda: setup.start(a.pack, folder=str(into), map_id=map_id, address_id=address_id))
         lib, note = api.startup(SETTINGS)   # the finished job only stages the rename into `target`; this makes it
         api.opened(SETTINGS, target, note)
     if not install.is_library(target):
         sys.exit(f'setup finished but {target} is not a library')
+    key = DATA / 'derived' / 'lan-key'      # links holding the access key keep working after the swap
+    if key.is_file() and not (target / 'derived' / 'lan-key').exists():
+        (target / 'derived').mkdir(parents=True, exist_ok=True)
+        shutil.copy2(key, target / 'derived' / 'lan-key')
     stamp(target, pack)
     log('staged')
 
@@ -145,6 +160,7 @@ def main():
     p = sub.add_parser('stage')
     p.add_argument('--into', required=True)
     p.add_argument('--pack', default=os.environ.get('LASTBOOK_PACK', 'small'))
+    p.add_argument('--map', default=None, help='a state map other than the one the open library has')
     p = sub.add_parser('status')
     p.add_argument('--pack', default=os.environ.get('LASTBOOK_PACK', 'small'))
     a = ap.parse_args()
