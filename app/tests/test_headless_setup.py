@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""packaging/docker/headless_setup.py stage: when it may reuse a library already in the target, and what it records.
-Temporary folders and a stand-in for engine/setup's Setup only: nothing is downloaded.
+"""packaging/docker/headless_setup.py: when stage may reuse a library already in the target, and what it records (Stage: a
+stand-in for engine/setup's Setup, nothing is downloaded); and which saved setup job it may carry on with (SavedJobs: the real
+Setup and its jobs, against test_setup.py's local HTTPS server and fake pack and map).
 
   python3 -B app/tests/test_headless_setup.py [-v]
 
 Never packaged."""
-import argparse, hashlib, importlib.util, json, os, shutil, sys, tempfile, unittest
+import argparse, hashlib, importlib.util, json, os, shutil, sys, tempfile, time, unittest
 from pathlib import Path
 from unittest import mock
 
@@ -15,6 +16,9 @@ os.environ['LASTBOOK_APP'] = str(ROOT)
 _spec = importlib.util.spec_from_file_location('headless_setup', ROOT / 'packaging' / 'docker' / 'headless_setup.py')
 hs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hs)
+_spec = importlib.util.spec_from_file_location('test_setup', ROOT / 'app' / 'tests' / 'test_setup.py')
+ts = importlib.util.module_from_spec(_spec)     # a module, not its TestCases: they are not run again from here
+_spec.loader.exec_module(ts)
 
 SMALL = {'id': 'small', 'title': 'Small', 'revision': 'r2', 'available': True,
          'files': [{'name': 'Lastbook-Small-r2.zip', 'size': 10, 'sha256': hashlib.sha256(b'small r2').hexdigest()}]}
@@ -75,7 +79,7 @@ class Stage(unittest.TestCase):
         FakeSetup.calls = []
         for p in (mock.patch.object(hs, 'DATA', self.data), mock.patch.object(hs, 'SETTINGS', self.tmp / 'config'),
                   mock.patch.object(hs, 'manifest', lambda: None), mock.patch.object(hs.api, 'Setup', FakeSetup),
-                  mock.patch.object(hs, 'run', lambda setup, start: start()),
+                  mock.patch.object(hs, 'run', lambda setup, start, *a: start()),
                   mock.patch.object(hs.api, 'startup', lambda settings: (None, None)),
                   mock.patch.object(hs.api, 'opened', lambda *a: None), mock.patch.object(hs, 'log', lambda *a: None)):
             p.start()
@@ -151,6 +155,84 @@ class Stage(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.stage('all')
         self.assertEqual(json.loads((self.target / hs.STAMP).read_text(encoding='utf-8'))['files'], OLD_ALL_FILES)
+
+
+class SavedJobs(ts.Base):
+    """Setup keeps its one job in the settings folder. The commands must carry on only with the job they are asked for."""
+
+    def setUp(self):
+        super().setUp()
+        self.mf, _ = ts.Maps.map_manifest(self)
+        self.data = self.parent / 'LastbookData'
+        real, nap = hs.api.Setup, time.sleep
+        kw = dict(allowed=ts.ALLOWED, context=self.ctx, home=self.home, llm_local=self.llm)
+        for p in (mock.patch.object(hs, 'DATA', self.data), mock.patch.object(hs, 'SETTINGS', self.settings),
+                  mock.patch.object(hs, 'manifest', lambda: self.mf),
+                  mock.patch.object(hs.api, 'Setup', lambda *a, **k: real(*a, **{**kw, **k})),
+                  mock.patch.object(hs.time, 'sleep', lambda t: nap(min(t, 0.05))), mock.patch.object(hs, 'log', lambda *a: None)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def job_file(self):
+        return self.settings / 'setup' / 'job.json'
+
+    def first_install(self, pause=False):
+        """Small with the CA map into the place, through the real job. With pause, stopped partway through the download."""
+        if pause:
+            self.files.pace = 0.01
+        s = self.setup(manifest=self.mf)
+        self.assertIsNone(s.start('small', folder=str(self.parent), map_id='CA').get('error'))
+        if pause:
+            while (s.public_job()['items'][0].get('bytes_done') or 0) == 0:
+                time.sleep(0.01)
+            self.assertEqual(s.pause()['state'], 'paused')
+            self.files.pace = 0
+        else:
+            self.assertEqual(self.wait(s)['state'], 'done')
+        return s
+
+    def test_stage_after_a_finished_first_install(self):
+        """The reported case: a first install finished and switched in, but never marked opened, so its done job is still saved.
+        Staging another folder must start its own job, not take that one as finished."""
+        self.first_install()
+        lib, _ = hs.api.startup(self.settings)
+        self.assertEqual(lib, self.data)
+        self.assertEqual(json.loads(self.job_file().read_text())['state'], 'done')
+        (self.data / 'derived').mkdir(exist_ok=True)
+        (self.data / 'derived' / 'lan-key').write_text('the-key', encoding='utf-8')
+        before = snapshot(self.data)
+        into = self.tmp / 'next'
+        hs.cmd_stage(argparse.Namespace(into=str(into), pack='small', map=None))
+        target = into / 'LastbookData'
+        self.assertTrue(hs.install.is_library(target))
+        self.assertEqual(hs.install.map_name(target), 'CA', 'the open library\'s map comes along')
+        self.assertEqual(json.loads((target / hs.STAMP).read_text())['id'], 'small')
+        self.assertEqual((target / 'derived' / 'lan-key').read_text(encoding='utf-8'), 'the-key')
+        self.assertEqual(snapshot(self.data), before, 'the open library is untouched')
+        self.assertEqual(hs.install.map_name(self.data), 'CA')
+
+    def test_unfinished_job_for_another_folder_is_left_alone(self):
+        self.first_install(pause=True)
+        saved = self.job_file().read_bytes()
+        with self.assertRaises(SystemExit) as e:
+            hs.cmd_stage(argparse.Namespace(into=str(self.tmp / 'next'), pack='small', map='CA'))
+        self.assertIn('unfinished job for', str(e.exception))
+        self.assertEqual(self.job_file().read_bytes(), saved)
+        self.assertFalse((self.tmp / 'next' / 'LastbookData').exists())
+
+    def test_its_own_unfinished_job_is_resumed(self):
+        """A container restarted mid-download: install carries on with the job it started."""
+        self.first_install(pause=True)
+        hs.cmd_install(argparse.Namespace(pack='small', map='CA'))
+        self.assertTrue(hs.install.is_library(self.data))
+        self.assertEqual(hs.install.map_name(self.data), 'CA')
+        self.assertFalse(self.job_file().exists(), 'opened() clears the finished job')
+
+    def test_an_install_asked_with_another_map_does_not_resume(self):
+        self.first_install(pause=True)
+        with self.assertRaises(SystemExit) as e:
+            hs.cmd_install(argparse.Namespace(pack='small', map=None))
+        self.assertIn('unfinished job for', str(e.exception))
 
 
 if __name__ == '__main__':

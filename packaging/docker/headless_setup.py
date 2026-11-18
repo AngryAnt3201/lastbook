@@ -50,9 +50,25 @@ def progress(job):
     return f'[{job["state"]}] ' + '; '.join(parts)
 
 
-def run(setup, start):
+def ours(job, target, pack_id, map_id=None, address_id=None):
+    """Whether a saved job is the one asked for now: the same target folder, pack and map, and the address search if one is named.
+    Setup keeps one job in its settings folder whatever it was for: a finished first install whose library was never opened, or
+    a stage into another folder, must not stand in for this one."""
+    items = {i.get('kind'): i.get('id') for i in job.get('items', [])}
+    return (job.get('folder') == str(target) and items.get('pack') == pack_id and items.get('map') == map_id
+            and (not address_id or items.get('addresses') == address_id))
+
+
+def run(setup, start, target, pack_id, map_id=None, address_id=None):
     """Starts (or resumes) the job and waits for it. Returns the finished job, or exits on failure."""
     job = setup.public_job()
+    if job and not ours(job, target, pack_id, map_id, address_id):
+        what = ', '.join(f'{i.get("kind")} {i.get("id")}' for i in job.get('items', []))
+        if job['state'] not in ('done', 'failed'):
+            sys.exit(f'setup has an unfinished job for {job.get("folder")} ({what}), not this one. Run the command that started it to '
+                     f'finish it, or delete {SETTINGS / "setup" / "job.json"} to drop it, then run this again.')
+        log(f'the saved {job["state"]} job was for {job.get("folder")} ({what}); starting a new one')
+        job = None
     if job and job['state'] == 'paused':
         log('resuming the saved job')
         setup.resume()
@@ -123,7 +139,7 @@ def cmd_install(a):
     if not pack:
         sys.exit(f'no pack {a.pack!r} in the manifest')
     log(f'installing {pack["title"]} ({sum(f["size"] for f in pack["files"]) / 1e9:.0f} GB download) into {DATA}')
-    run(setup, lambda: setup.start(a.pack, folder=str(DATA.parent), map_id=a.map))
+    run(setup, lambda: setup.start(a.pack, folder=str(DATA.parent), map_id=a.map), DATA, a.pack, a.map)
     lib, note = api.startup(SETTINGS)       # what app/main.py does before it opens a library
     api.opened(SETTINGS, DATA, note)
     if not install.is_library(DATA):
@@ -159,7 +175,7 @@ def cmd_stage(a):
     else:
         log(f'staging {pack["title"]} into {target}' + (f' with the {map_id} map' if map_id else '')
             + (f' and {address_id} address search' if address_id else ''))
-        run(setup, lambda: setup.start(a.pack, folder=str(into), map_id=map_id, address_id=address_id))
+        run(setup, lambda: setup.start(a.pack, folder=str(into), map_id=map_id, address_id=address_id), target, a.pack, map_id, address_id)
         lib, note = api.startup(SETTINGS)   # the finished job only stages the rename into `target`; this makes it
         api.opened(SETTINGS, target, note)
         installed = True
