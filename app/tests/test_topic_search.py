@@ -135,10 +135,16 @@ FIRST = {
 # for them found nothing: [guide, choice] that comes first.
 ALREADY_COVERED = {
     'pets': ['food', 'special'], 'propane': ['power', 'gas'], 'propane tank': ['power', 'gas'], 'dental': ['health', None],
+    'respirator': ['disaster', 'smoke'], 'N95 respirator': ['disaster', 'smoke'], 'greenhouse': ['repair', 'build'],
+    'toothpaste': ['health', None], 'bandage': ['hurt', None], 'gauze': ['hurt', None], 'goggles': ['repair', None],
+    'antenna': ['comms', None], 'documents': ['disaster', None], 'important documents': ['disaster', None],
 }
 # An emergency that happens to mention a new word still opens the urgent choice first, not the routine one the word was added to.
 URGENT_FIRST = {
     'child unconscious after pet food': ['hurt', 'breathing'], 'child swallowed pet food': ['hurt', 'poison'],
+    'child not breathing respirator': ['hurt', 'breathing'], 'child swallowed toothpaste': ['hurt', 'poison'],
+    'bleeding through the bandage': ['hurt', 'bleeding'], 'bleeding wont stop bandage soaked': ['hurt', 'bleeding'],
+    'unconscious bleeding bandage': ['hurt', 'breathing'], 'bandage a burn': ['hurt', 'burn'], 'duct tape wound': ['hurt', 'bleeding'],
 }
 # Searches the new words must not disturb: [guide, choice] that comes first.
 UNDISTURBED = {
