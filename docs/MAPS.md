@@ -149,6 +149,8 @@ as one map.
 
 [REGIONS-MX.md](REGIONS-MX.md) does the same for Mexico's 32 states (entidades federativas).
 
+[REGIONS-BR.md](REGIONS-BR.md) does the same for Brazil's 26 states and the Federal District (Distrito Federal), 27 in all.
+
 ### To do: maps for every place on Earth
 
 The goal is a detailed map for any place a person lives.
