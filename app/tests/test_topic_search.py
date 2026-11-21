@@ -249,6 +249,26 @@ HEART_ORDINARY = {
 }
 TOPS = sorted({*TOPS, *HEART_URGENT, *HEART_ORDINARY})
 
+# Avalanche, landslide and volcano situations in the disaster guide: [guide, choice] that comes first. Most found
+# nothing before; "caught in avalanche" opened the tornado choice and "rock fall" the nuclear one.
+SLIDES_AND_ERUPTIONS = {
+    'avalanche': ['disaster', 'avalanche'], 'caught in avalanche': ['disaster', 'avalanche'],
+    'avalanche warning': ['disaster', 'avalanche'], 'buried in snow': ['disaster', 'avalanche'],
+    'landslide': ['disaster', 'landslide'], 'landslide warning': ['disaster', 'landslide'],
+    'mudslide': ['disaster', 'landslide'], 'debris flow': ['disaster', 'landslide'],
+    'rockfall': ['disaster', 'landslide'], 'rock fall': ['disaster', 'landslide'],
+    'volcano': ['disaster', 'volcano'], 'volcano warning': ['disaster', 'volcano'],
+    'eruption': ['disaster', 'volcano'], 'lava flow': ['disaster', 'volcano'], 'volcanic ash': ['disaster', 'volcano'],
+}
+# Searches those situations must not disturb: [guide, choice] that comes first. "ash" and "snow" stay with smoke
+# and shelter, a flood clean-up stays with sanitation, and someone trapped still gets signalling for help.
+SLIDES_UNDISTURBED = {
+    'ash': ['shelter', 'smoke'], 'ash falling': ['shelter', 'smoke'], 'snow': ['shelter', None],
+    'mud in the house': ['sanitation', 'floodmess'], 'trapped under debris': ['comms', 'signal'],
+    'tsunami warning': ['disaster', 'tsunami'],
+}
+TOPS = sorted({*TOPS, *SLIDES_AND_ERUPTIONS, *SLIDES_UNDISTURBED})
+
 CASES = {
     'stop': QSTOP, 'fold': list(FOLD), 'match': [m[:2] for m in MATCH], 'rank': ENGLISH, 'topics': TOPICS,
     'rankOwn': RANK_OWN,
@@ -444,6 +464,13 @@ class TopicSearch(unittest.TestCase):
             for q, first in STILL_SHELTER.items():
                 with self.subTest(q=q, segmenter=r['segmenter']):
                     self.assertEqual(top[q][:1], [first])
+
+    def test_avalanche_landslide_and_volcano(self):
+        for r in self.modes:
+            top = dict(zip(TOPS, (ok(e) for e in r['tops'])))
+            for q, first in {**SLIDES_AND_ERUPTIONS, **SLIDES_UNDISTURBED}.items():
+                with self.subTest(q=q, segmenter=r['segmenter']):
+                    self.assertEqual(top[q][:1], [first])   # an empty result fails, not errors
 
 if __name__ == '__main__':
     unittest.main()
