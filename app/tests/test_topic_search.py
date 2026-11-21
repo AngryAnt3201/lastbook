@@ -371,14 +371,18 @@ SLIDES_AND_ERUPTIONS = {
     'mudslide': ['disaster', 'landslide'], 'debris flow': ['disaster', 'landslide'],
     'rockfall': ['disaster', 'landslide'], 'rock fall': ['disaster', 'landslide'],
     'volcano': ['disaster', 'volcano'], 'volcano warning': ['disaster', 'volcano'],
-    'eruption': ['disaster', 'volcano'], 'lava flow': ['disaster', 'volcano'], 'volcanic ash': ['disaster', 'volcano'],
+    'eruption': ['disaster', 'volcano'], 'lava flow': ['disaster', 'volcano'],
+    'volcanic ash': ['disaster', 'volcano'], 'ashfall': ['disaster', 'volcano'],      # clearly volcanic
 }
-# Searches those situations must not disturb: [guide, choice] that comes first. "ash" and "snow" stay with smoke
-# and shelter, a flood clean-up stays with sanitation, and someone trapped still gets signalling for help.
+# Searches those situations must not disturb: [guide, choice] that comes first. Ash on its own is smoke, not a
+# volcano: "ash fall" has "fall", which also starts "fallout", and put Nuclear explosion first while "ashfall" was a
+# keyword of the disaster guide. "snow" stays with shelter, a flood clean-up with sanitation, someone trapped still
+# gets signalling for help, and "back" does not find a word in the avalanche hint.
 SLIDES_UNDISTURBED = {
-    'ash': ['shelter', 'smoke'], 'ash falling': ['shelter', 'smoke'], 'snow': ['shelter', None],
-    'mud in the house': ['sanitation', 'floodmess'], 'trapped under debris': ['comms', 'signal'],
-    'tsunami warning': ['disaster', 'tsunami'],
+    'ash': ['shelter', 'smoke'], 'ash fall': ['shelter', 'smoke'], 'ash falling': ['shelter', 'smoke'],
+    'snow': ['shelter', None], 'mud in the house': ['sanitation', 'floodmess'],
+    'trapped under debris': ['comms', 'signal'], 'tsunami warning': ['disaster', 'tsunami'],
+    'back labour poisoned': ['hurt', 'head'],
 }
 TOPS = sorted({*TOPS, *SLIDES_AND_ERUPTIONS, *SLIDES_UNDISTURBED})
 

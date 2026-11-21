@@ -39,7 +39,6 @@
   "volcano",
   "eruption",
   "lava",
-  "ashfall",
   "chemical",
   "shelter in place",
   "radiation",
@@ -343,7 +342,7 @@
   {
    "id": "avalanche",
    "label": "Avalanche — caught or buried in one",
-   "hint": "Avalanche warning, trapped by a slide, steep slopes, backcountry",
+   "hint": "Avalanche warning, trapped by a slide, steep slopes",
    "read": [
     {
      "doc": "d0fbb2e051cd46",
@@ -405,7 +404,7 @@
   {
    "id": "volcano",
    "label": "A volcano is erupting",
-   "hint": "Volcano warning, volcanic eruption, lava flow, lahar, vog",
+   "hint": "Volcano warning, volcanic eruption, lava flow, ashfall, lahar, vog",
    "read": [
     {
      "doc": "d0fbb2e051cd46",
