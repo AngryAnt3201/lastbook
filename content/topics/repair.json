@@ -33,7 +33,7 @@
   "compost bin",
   "plans",
   "safety",
-  "PPE"
+  "PPE", "goggles"
  ],
  "choices": [
   {
@@ -160,7 +160,7 @@
   {
    "id": "build",
    "label": "I want to build a bench, bin or small structure",
-   "hint": "Workbench, compost bins, cold frame",
+   "hint": "Workbench, compost bins, cold frame, greenhouse",
    "read": [
     {
      "doc": "eng-f547be2abcd61da0",
