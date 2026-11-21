@@ -48,5 +48,5 @@
   "language.saved": "Sprache gespeichert.",
   "language.saveFailed": "Die Sprache konnte nicht gespeichert werden. Versuchen Sie es erneut.",
   "language.loadFailed": "Die gespeicherte Sprache konnte nicht geladen werden.",
-  "language.unavailable": "Deutsch ist nicht verfügbar. Lastbook verwendet Englisch."
+  "language.unavailable": "Die gespeicherte Sprache ist nicht verfügbar. Lastbook verwendet Englisch."
 }

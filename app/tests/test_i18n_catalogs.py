@@ -110,6 +110,18 @@ class Catalogues(unittest.TestCase):
             catalogues.check_assets(web, generated)
 
 
+class FallbackWording(unittest.TestCase):
+    """language.unavailable is shown in English when the saved language's catalogue cannot load (web/i18n-app.js), whichever
+    language that is. #371 review: it said "Spanish is unavailable" with German saved."""
+
+    def test_english_fallback_names_no_language(self):
+        en = json.loads((ROOT / 'translations' / 'desktop' / 'en.json').read_text(encoding='utf-8'))
+        text = en['language.unavailable']
+        self.assertEqual(text, 'The saved language is unavailable. Lastbook is using English.')
+        for name in ('Spanish', 'German', 'español', 'Deutsch'):
+            self.assertNotIn(name, text)
+
+
 class GermanWording(unittest.TestCase):
     """The de catalogue keeps the conventions in docs/i18n.md#german-de: formal "Sie" throughout, and fixed words for the screens."""
 

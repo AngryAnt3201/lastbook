@@ -48,5 +48,5 @@
   "language.saved": "Language saved.",
   "language.saveFailed": "Could not save the language. Try again.",
   "language.loadFailed": "Could not load the saved language.",
-  "language.unavailable": "Spanish is unavailable. Lastbook is using English."
+  "language.unavailable": "The saved language is unavailable. Lastbook is using English."
 }
