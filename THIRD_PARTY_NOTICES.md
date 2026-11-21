@@ -14,6 +14,7 @@ Versions are the pins in `packaging/requirements*.txt`, `packaging/llm/*.sh`, `p
 
 | Component | Version | Licence | Source | Checked |
 |---|---|---|---|---|
+| Nunito (`web/Nunito-Variable.woff2`, the Ask page's headings; the same file as `website-next/fonts/`), copied into the app with `web/` | variable, as in `website-next/fonts/` | SIL Open Font License 1.1 | https://github.com/googlefonts/nunito | Checked: `web/Nunito-OFL.txt` |
 | pypdfium2 (`engine/vendor-macos/` on Mac; installed from PyPI for the Windows build) | 5.14.0 | Apache-2.0 or BSD-3-Clause; data files CC-BY-4.0 | https://github.com/pypdfium2-team/pypdfium2 | Checked: `pypdfium2-5.14.0.dist-info/licenses/` |
 | PDFium, inside pypdfium2's `libpdfium.dylib` | as built by pdfium-binaries | BSD-3-Clause (The PDFium Authors) | https://pdfium.googlesource.com/pdfium, https://github.com/bblanchon/pdfium-binaries | Checked: `BUILD_LICENSES/pdfium.txt`, `pdfium-binaries.txt` |
 | Libraries built into PDFium: abseil, agg 2.3, fast_float, FreeType, ICU, Little CMS, libjpeg-turbo, OpenJPEG, libpng, LLVM libc, simdutf, zlib | as built | Each under its own licence (Apache-2.0, BSD-style, FreeType/FTL, Unicode, MIT, IJG, zlib and others) | see each file | Checked: the full texts are in `engine/vendor-macos/pypdfium2-5.14.0.dist-info/licenses/data/darwin_arm64/BUILD_LICENSES/` |
@@ -52,6 +53,17 @@ allow. The Vulkan loader (`vulkan-1.dll`) comes with the graphics driver and is 
 |---|---|---|---|---|
 | Gemma 4 26B A4B instruct, GGUF quantization by Unsloth (`gemma-4-26B-A4B-it-UD-Q4_K_M.gguf`) | revision pinned in `llm_local.py` | Apache-2.0, per the model card | https://huggingface.co/unsloth (Google's Gemma 4 release) | Upstream: check the model card and its licence file before release |
 | BAAI bge-small-en-v1.5 (ONNX), meaning-based search | as pinned | MIT, per the model card | https://huggingface.co/BAAI/bge-small-en-v1.5 | Upstream: the local copy has no licence file beside it |
+
+## Development and test tools (not bundled, not downloaded by the apps)
+
+These are used only to run optional tests from a checkout. They are not in any package, are not required to build or
+run Lastbook, and the build's package scan rejects test code. All of them work offline once installed.
+
+| Component | Used by | Licence | Source | Checked |
+|---|---|---|---|---|
+| Playwright for Python (`pip install playwright`; the wheel carries its own Node.js driver). Run it against a Chromium you already have, so no browser download is needed | `app/tests/i18n_browser.py` | Apache-2.0 | https://github.com/microsoft/playwright-python | Checked: package metadata of 1.65.2 (`License-Expression: Apache-2.0`) |
+| pyatspi (Ubuntu package `python3-pyatspi`, part of at-spi2) | `app/tests/linux_i18n_smoke.py`, `app/tests/linux_at.py` | LGPL-2.0-or-later | https://gitlab.gnome.org/GNOME/at-spi2-core | Upstream |
+| xdotool (Ubuntu package `xdotool`) | `app/tests/linux_i18n_smoke.py` | BSD-3-Clause | https://github.com/jordansissel/xdotool | Upstream |
 
 ## iPad development preview (`mobile/ipad/`)
 

@@ -268,6 +268,127 @@ def need_bytes(pack, model, have_files=()):
     return n
 
 
+# ------------------------------------------------------------------------------------------------- comparing packs --
+def read_pack_manifest(path):
+    """[(path, bytes, sha256)] from a pack-manifest.tsv, read the way repair reads it: the first line is the header, blank
+    lines are skipped, and the columns after sha256 (how, changes) are not needed. A missing header, a list with no files,
+    a row that is too short, a size that is not a whole number of bytes, a SHA-256 that is not 64 hex digits, an empty path
+    or a path listed twice raises ValueError, because a list we cannot trust is no basis for keeping files."""
+    lines = Path(path).read_text(encoding='utf-8').splitlines()
+    if not lines or lines[0].split('\t')[:3] != ['path', 'bytes', 'sha256']:
+        raise ValueError(f'{path} does not start with the header path, bytes, sha256')
+    rows, seen = [], set()
+    for n, line in enumerate(lines[1:], 2):
+        if not line.strip():
+            continue
+        r = line.split('\t')
+        try:
+            rel, size, digest = r[0], int(r[1]), r[2]
+        except (ValueError, IndexError):
+            raise ValueError(f'line {n} of {path} is not path, bytes, sha256') from None
+        if not rel or size < 0 or not re.fullmatch(r'[0-9a-f]{64}', digest):
+            raise ValueError(f'line {n} of {path} is not path, bytes, sha256')
+        if rel in seen:
+            raise ValueError(f'line {n} of {path} lists {rel} a second time')
+        seen.add(rel)
+        rows.append((rel, size, digest))
+    if not rows:
+        raise ValueError(f'{path} lists no files')
+    return rows
+
+
+def compare_pack_manifests(installed, new):
+    """What an upgrade from one pack to another would need, from their manifests alone. Read-only: it looks at no file on
+    disk and downloads nothing. Nothing in setup calls it yet (issue #144).
+
+    installed and new are lists of (path, bytes, sha256), as read_pack_manifest returns them. A path in both is unchanged
+    when its size and SHA-256 are both the same, otherwise changed. A path that would leave the library ('..', a drive, a
+    root or a backslash, on every system, as in _member_parts) is never kept: it goes in unsafe, apart from the rest, and
+    counts toward no total.
+    Lists are sorted by path. fetch_bytes (added plus changed, at their new size) is what would have to come in;
+    reuse_bytes (unchanged) is what is already here."""
+    def safe(rel):
+        parts = PurePosixPath(rel).parts
+        return bool(parts) and '..' not in parts and ':' not in parts[0] and not rel.startswith('/') and not set('\\\x00') & set(rel)
+    old = {rel: (size, digest) for rel, size, digest in installed}
+    out = {'added': [], 'removed': [], 'changed': [], 'unchanged': [], 'unsafe': []}
+    size_of = {}
+    for rel, size, digest in new:
+        size_of[rel] = size
+        if not safe(rel):
+            out['unsafe'].append(rel)
+        elif rel not in old:
+            out['added'].append(rel)
+        elif old[rel] == (size, digest):
+            out['unchanged'].append(rel)
+        else:
+            out['changed'].append(rel)
+    out['removed'] = [rel for rel in old if rel not in size_of and safe(rel)]
+    out['unsafe'] += [rel for rel in old if rel not in size_of and not safe(rel)]
+    for k in out:
+        out[k].sort()
+    total = {k: sum(size_of[rel] for rel in out[k]) for k in ('added', 'changed', 'unchanged')}
+    total['removed'] = sum(old[rel][0] for rel in out['removed'])
+    out['bytes'] = total
+    out['fetch_bytes'] = total['added'] + total['changed']
+    out['reuse_bytes'] = total['unchanged']
+    return out
+
+
+KEPT_KINDS = ('map', 'model', 'addresses', 'other')
+
+
+def plan_update(lib, new):
+    """What updating the installed library at lib to a release would do, without doing any of it (issue #144). new is the
+    release's rows, as read_pack_manifest returns them; the installed list is lib's own pack-manifest.tsv. Read-only: it
+    reads the two lists and the names and sizes of the library's files, and opens, downloads, writes and deletes nothing.
+    Nothing in setup calls it yet.
+
+    The pack's own files are compared as compare_pack_manifests does, and its keys are all here. What is not the pack's is
+    never counted as removed or changed, and is listed apart in kept, as it would stay:
+      - map: a map installed on its own (map-set.json), whose files replace the pack's map files. While it is there, map
+        files on either list are left out of the comparison, as repair checks them against map-set.json instead.
+      - model: the local AI, in models/.
+      - addresses: address indexes, in derived/geo/addresses/.
+      - other: any other file neither list names, such as the app's own state and logs, or files the person added.
+    kept maps each kind to [(path, bytes)], sorted; kept_bytes to their total. map is the installed map's name, or None."""
+    lib = Path(lib)
+    installed = read_pack_manifest(lib / 'pack-manifest.tsv')
+    own_map = has_separate_map(lib, pack_lists_map=any(rel == 'map-set.json' for rel, _, _ in installed))
+    map_paths = set(map_files(lib)) if own_map else set()
+
+    def pack_side(rows):
+        return [r for r in rows if not (own_map and map_member(r[0]))]
+    out = compare_pack_manifests(pack_side(installed), pack_side(new))
+    listed = {r[0] for r in installed} | {r[0] for r in new} | {'pack-manifest.tsv'}   # the list itself comes with the release
+    kept = {k: [] for k in KEPT_KINDS}
+    for root, dirs, files in os.walk(lib):       # links to folders are not followed
+        dirs.sort()
+        for name in files:
+            p = Path(root) / name
+            rel = p.relative_to(lib).as_posix()
+            if own_map and rel in map_paths:
+                kind = 'map'
+            elif rel in listed:
+                continue                          # the pack's own: in the comparison above
+            elif rel.startswith('models/'):
+                kind = 'model'
+            elif rel.startswith('derived/geo/addresses/'):
+                kind = 'addresses'
+            else:
+                kind = 'other'
+            try:
+                kept[kind].append((rel, p.lstat().st_size))
+            except OSError:
+                continue
+    for k in kept:
+        kept[k].sort()
+    out['kept'] = kept
+    out['kept_bytes'] = {k: sum(n for _, n in v) for k, v in kept.items()}
+    out['map'] = map_name(lib) if own_map else None
+    return out
+
+
 # -------------------------------------------------------------------------------------------------------- switching --
 def _write_json(path, d):
     path = Path(path)
@@ -298,10 +419,11 @@ def stage_switch(pend, new_lib, target, model_file=None, kind=None, model_sha256
     return d
 
 
-def carry_over(old, new):
-    """What belongs to the person, not the pack, goes with them: the model file, address indexes, and the AI's on/off setting."""
+def carry_over(old, new, moved=None):
+    """What belongs to the person, not the pack, goes with them: the model file, address indexes, and the AI's on/off setting.
+    Each move is added to `moved` as it happens, so a caller still knows what moved when a later move raises."""
     old, new = Path(old), Path(new)
-    moved = []
+    moved = [] if moved is None else moved
     src = old / 'models'
     if src.is_dir():
         (new / 'models').mkdir(parents=True, exist_ok=True)
@@ -332,21 +454,47 @@ def switch(new_lib, target):
     if not is_library(new_lib):
         raise Refused('activate', 'The new library is not complete.')
     old = None
+    carried = []
     if target.exists():
         old = old_name(target)
         if is_library(target):
-            carry_over(target, new_lib)
+            try:
+                carry_over(target, new_lib, carried)
+            except OSError as e:
+                _refuse_carried_back(carried, new_lib, target, f'Lastbook could not move your files into the new library ({type(e).__name__}). Close anything using them, then try again.')
         try:
             os.replace(target, old)
         except OSError as e:
-            raise Refused('activate', f'Lastbook could not move the old library aside ({type(e).__name__}). Close anything using it, then try again.')
+            _refuse_carried_back(carried, new_lib, target, f'Lastbook could not move the old library aside ({type(e).__name__}). Close anything using it, then try again.')
     try:
         os.replace(new_lib, target)
     except OSError as e:
         if old:
-            os.replace(old, target)
-        raise Refused('activate', f'Lastbook could not put the new library in place ({type(e).__name__}).')
+            try:
+                os.replace(old, target)
+            except OSError:
+                still = [str(moved) for moved in carried if moved.is_file()]
+                raise Refused('activate', f'Lastbook could not put the new library in place ({type(e).__name__}), nor the old one back. '
+                                          f'The old library is in {old}.'
+                                          + (' These files of yours are still in the new library: ' + ', '.join(still) if still else ''))
+        _refuse_carried_back(carried, new_lib, target, f'Lastbook could not put the new library in place ({type(e).__name__}).')
     return old
+
+
+def _refuse_carried_back(carried, new_lib, target, message):
+    """Undo carry_over after a failed step, so the library that stays in place keeps its model and address indexes.
+    A file that cannot go back stays where it is, and the message says where."""
+    stuck = []
+    for moved in carried:
+        back = target / moved.relative_to(new_lib)
+        try:
+            if moved.is_file() and not back.exists():
+                os.replace(moved, back)
+        except OSError:
+            stuck.append(str(moved))
+    if stuck:
+        message += ' These files could not be moved back and are still here: ' + ', '.join(stuck)
+    raise Refused('activate', message)
 
 
 # ----------------------------------------------------------------------------------------------------------- state maps --
@@ -368,6 +516,27 @@ def map_name(lib):
         return str(json.loads((Path(lib) / 'pack.json').read_text(encoding='utf-8')).get('map') or 'base')
     except (OSError, ValueError, AttributeError):
         return 'base'
+
+
+def has_separate_map(lib, *, pack_lists_map=None):
+    """Does the library hold a map set installed apart from its pack (a state map), rather than the pack's own (All's whole US)?
+    The pack's own set is named by pack.json's `map`, and its map-set.json is listed in pack-manifest.tsv with its other files,
+    so they are checked and fetched with the pack. Ownership never depends on map-set.json's contents being whole: a damaged one
+    of the pack's own then shows up as a damaged pack file.
+
+    Callers that have read the pack manifest can supply whether it lists map-set.json."""
+    lib = Path(lib)
+    d = map_set(lib)
+    if not d:
+        return False
+    try:
+        own = json.loads((lib / 'pack.json').read_text(encoding='utf-8')).get('map')
+        if pack_lists_map is None:
+            pack_lists_map = any(line.split('\t', 1)[0] == 'map-set.json'
+                                 for line in (lib / 'pack-manifest.tsv').read_text(encoding='utf-8').splitlines()[1:])
+    except (OSError, ValueError, AttributeError):
+        return True
+    return not (pack_lists_map and d.get('name') == own)
 
 
 def check_map(lib):

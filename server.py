@@ -17,6 +17,8 @@ requests, and adds a few read-only endpoints:
   /api/map/tile/<z>/<x>/<y>   offline street map vector tile (SoCal OpenStreetMap)
   /api/map/near?lat=&lon=     nearest help points (hospital, pharmacy, water, fire station...)
   /api/places?q=              place finder (ZIP codes, towns, named places)
+  /api/battery                this computer's battery (Linux and Mac so far), read when asked; this computer only
+  /api/not-found              notes of things the person couldn't find, kept only when they ask; this computer only
 
 Nothing in library-data is written. Caches go to derived/cache.
 """
@@ -33,7 +35,7 @@ if __name__ == '__main__':  # --data must be known before the paths below are wo
 
 import engine.paths as lastbook_paths  # noqa: E402  (data folder and program folder can differ in the packaged app)
 from engine.paths import ro_uri  # noqa: E402
-from engine import saved_pages, address_search  # noqa: E402
+from engine import saved_pages, address_search, encyclopedias  # noqa: E402
 from engine.setup import api as setup_api  # noqa: E402  (the one module that may download: only when the person asks)
 HERE = lastbook_paths.DATA  # holds derived/
 APP = lastbook_paths.APP  # holds web/ and content/
@@ -200,11 +202,9 @@ def topics():
 
 
 def zim_names():
-    """The encyclopedia files this library really holds. Its folder decides, so one rule covers every size of pack."""
-    try:
-        return sorted(p.name for p in (LIB / 'collections').glob('*.zim'))
-    except OSError:
-        return []
+    """The encyclopedia files this library really holds. Its folder decides, so one rule covers every size of pack.
+    Only files the /zim/ reader would open (engine/safe_paths.py): a link out of collections/ is not offered or cited."""
+    return encyclopedias.list_files(LIB)
 
 
 def item_here(i, zims):
@@ -342,27 +342,44 @@ def query_groups(q):
     return content, groups
 
 
+def search_ids(keep):
+    """Doc ids in the search index whose result passes keep (a transcript stands for its video), as a JSON list for
+    `doc_id IN (SELECT value FROM json_each(?))`: one parameter however many ids, so a LIMIT counts only those rows."""
+    cat = catalog()
+    ids = []
+    for r in cat['by_id'].values():
+        v = cat['by_path'].get(r.get('video_path')) if r['kind'] == 'transcript' else None
+        if keep(v or r):
+            ids.append(r['id'])
+    return json.dumps(ids)
+
+
 @functools.lru_cache(maxsize=256)
 def find(q, kind='all', limit=30):
     content, groups = query_groups(q)
     if not groups:
         return {'q': q, 'results': [], 'expanded': []}
+    allowed = KIND_FILTERS.get(kind)
+    # Videos are a small share of the index, so a broad word fills the LIMIT with manual pages and the filter below
+    # leaves nothing: count only video rows in the query itself. Manual pages are most of the index and need no help,
+    # and filtering in the query costs a read of every matching row, so To read and Everything keep the plain query.
+    only = (search_ids(lambda r: r['kind'] in allowed),) if kind == 'video' else ()
     con = sqlite3.connect(ro_uri(library.DB), uri=True)
     sql = ("SELECT doc_id,page,snippet(pages,6,'\u0001','\u0002',' … ',28),bm25(pages,0,6,1,1,0,0,1) "
-           "FROM pages WHERE pages MATCH ? ORDER BY bm25(pages,0,6,1,1,0,0,1) LIMIT 600")
+           "FROM pages WHERE pages MATCH ?" + (" AND doc_id IN (SELECT value FROM json_each(?))" if only else "") +
+           " ORDER BY bm25(pages,0,6,1,1,0,0,1) LIMIT 600")
     rows, mode = [], 'all words'
     try:
-        rows = con.execute(sql, (fts_expr(groups),)).fetchall()
+        rows = con.execute(sql, (fts_expr(groups),) + only).fetchall()
         if len(rows) < 8 and len(groups) > 1:
             # relax: any of the ideas, rank documents that have more of them higher
             mode = 'some words'
-            rows += con.execute(sql, (' OR '.join('(' + fts_expr([g]) + ')' for g in groups),)).fetchall()
+            rows += con.execute(sql, (' OR '.join('(' + fts_expr([g]) + ')' for g in groups),) + only).fetchall()
     except sqlite3.OperationalError:
         rows = []
     con.close()
     cat = catalog()['by_id']
     docs = {}
-    allowed = KIND_FILTERS.get(kind)
     for doc_id, page, snip, score in rows:
         r = cat.get(doc_id)
         if not r or r['kind'] == 'metadata':
@@ -641,18 +658,14 @@ def render_page(r, n, width):
 
 
 def vtt_cues(path):
-    cues, cur = [], None
-    for line in (LIB / path).read_text(encoding='utf-8', errors='replace').splitlines():
-        m = re.match(r'(\d+):(\d\d):(\d\d)[.,](\d+)\s+-->', line) or re.match(r'(\d\d):(\d\d)[.,](\d+)\s+-->', line)
-        if m:
-            g = m.groups()
-            t = int(g[0]) * 3600 + int(g[1]) * 60 + int(g[2]) if len(g) == 4 else int(g[0]) * 60 + int(g[1])
-            cur = {'t': t, 'text': ''}
-            cues.append(cur)
-        elif cur is not None and line.strip() and not line.strip().isdigit():
+    cues = []
+    for t, lines in saved_pages.caption_blocks((LIB / path).read_bytes()):
+        cur = {'t': t, 'text': ''}
+        for line in lines:
             txt = html.unescape(re.sub(r'<[^>]+>', '', line)).strip()
             if txt and not cur['text'].endswith(txt):
                 cur['text'] = (cur['text'] + ' ' + txt).strip()
+        cues.append(cur)
     # auto captions repeat lines across cues; drop repeats and merge into ~sentence chunks
     out, last = [], ''
     for c in cues:
@@ -1656,7 +1669,7 @@ class Handler(library.Handler):
     def send_static(self, path):
         data = path.read_bytes()
         mime = {'.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml',
-                '.json': 'application/manifest+json', '.png': 'image/png', '.webmanifest': 'application/manifest+json'}.get(path.suffix, 'application/octet-stream')
+                '.json': 'application/manifest+json', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8'}.get(path.suffix, 'application/octet-stream')
         self.send_response(200)
         self.send_header('Content-Type', mime)
         self.send_header('Content-Length', str(len(data)))
@@ -1890,6 +1903,9 @@ class Handler(library.Handler):
         if rpath.startswith('/api/update/'):  # Check for updates, when the person asks: engine/update.py, this computer only
             from engine import update
             return update.handle(self, 'POST', rpath)
+        if rpath == '/api/not-found' or rpath.startswith('/api/not-found/'):  # Things I couldn't find: engine/notes.py, this computer only
+            from engine import notes
+            return notes.handle(self, 'POST', rpath, [t.get('id') for t in topics()])
         if rpath.startswith('/api/tool/'):  # the assistant's read-only tools, for other local DeepSeek clients
             name = rpath[10:]
             if name not in {t['function']['name'] for t in assistant.TOOLS}:
@@ -1981,6 +1997,12 @@ class Handler(library.Handler):
             if path.startswith('/api/update/'):
                 from engine import update
                 return update.handle(self, 'GET', path)
+            if path == '/api/battery':   # this computer's battery, read when asked: engine/setup/hardware.py, this computer only
+                from engine.setup import hardware
+                return hardware.handle_battery(self)
+            if path == '/api/not-found':   # Things I couldn't find: engine/notes.py, this computer only
+                from engine import notes
+                return notes.handle(self, 'GET', path)
             if path in ('/', '/index.html'):
                 return self.send_static(WEB / 'index.html')
             if path.startswith('/ui/'):
@@ -2123,6 +2145,11 @@ def init(no_index=False):
     threading.Thread(target=prewarm_previews, daemon=True).start()
 
 
+class HTTPServer(library.HTTPServer):   # queues 128 connections: opening the map asks for 20 or more tiles at once
+    if os.name == 'nt':  # SO_REUSEADDR on Windows lets a second copy silently share the port
+        allow_reuse_address = False
+
+
 def serve(port, lan=False):
     """The HTTP server version: binds the port and answers until stopped."""
     global LAN_KEY, SERVER
@@ -2132,11 +2159,7 @@ def serve(port, lan=False):
             kf.write_text(secrets.token_urlsafe(18))
             os.chmod(kf, 0o600)
         LAN_KEY = kf.read_text(encoding='utf-8').strip()
-    server_class = library.http.server.ThreadingHTTPServer
-    if os.name == 'nt':  # SO_REUSEADDR on Windows lets a second copy silently share the port
-        class server_class(server_class):
-            allow_reuse_address = False
-    srv = SERVER = server_class(('0.0.0.0' if lan else '127.0.0.1', port), Handler)
+    srv = SERVER = HTTPServer(('0.0.0.0' if lan else '127.0.0.1', port), Handler)
     print(f'Lastbook: http://127.0.0.1:{port}/', flush=True)
     if lan:
         import socket
