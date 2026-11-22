@@ -280,7 +280,17 @@ class Local:
             if on_wait:
                 on_wait(self.pct)
             time.sleep(0.25)
-        self.stop('took too long to start')
+        # The reader may report progress between the while-condition and this lock.
+        # Recheck before killing the shared runner, and never stop a replacement.
+        with self.lock:
+            if self.state == 'ready':
+                self.last_used = time.time()
+                return None
+            if self.state != 'loading':
+                return self.message or 'The local AI did not start.'
+            if time.time() - max(t0, self.t_progress) < START_WAIT:
+                return self.ensure_running(on_wait=on_wait, cancelled=cancelled)
+            self.stop('took too long to start')
         return 'The local AI took too long to start.'
 
     def _spawn(self):
