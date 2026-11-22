@@ -7,7 +7,7 @@ Two parts: the real files are checked, and the checker itself is shown to fail o
 number that is not a number, so a passing run means something.
 """
 import copy, json, re, sys, unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -22,13 +22,23 @@ CALLING_CODE = re.compile(r'^\+[0-9]{1,4}$')
 SOURCE = re.compile(r'^https?://[^\s/]+\.[^\s/]+\S*$')
 
 
+def latest_checked_date(now=None):
+    """The latest day a number can honestly say it was checked on: today's date in the earliest time zone on Earth
+    (UTC+14), from the clock in UTC. A person in Chile or Europe may check a number after their midnight while a machine
+    behind them is still on the day before, so the machine's own date would call that "the future" and fail. A day more
+    than that is the future everywhere."""
+    now = now or datetime.now(timezone.utc)
+    return (now.astimezone(timezone.utc) + timedelta(hours=14)).date()
+
+
 def words(x):
     return isinstance(x, list) and bool(x) and all(isinstance(w, str) and w.strip() and w == w.lower() for w in x)
 
 
-def problems(data, name, today=None):
-    """What is wrong with one country's table, as a list of plain lines. Empty when it is sound."""
-    today = today or date.today()
+def problems(data, name, latest=None):
+    """What is wrong with one country's table, as a list of plain lines. Empty when it is sound. `latest` is the last
+    day a check may be dated (default: latest_checked_date()); the tests below give it a fixed day."""
+    latest = latest or latest_checked_date()
     out = []
     code = name[:-5] if name.endswith('.json') else name
     if not re.fullmatch(r'[A-Z]{2}', code):
@@ -75,7 +85,7 @@ def problems(data, name, today=None):
             d = date.fromisoformat(c)
             if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', c):
                 raise ValueError
-            if d > today:
+            if d > latest:
                 out.append(f'{who}: "checked_on" {c} is in the future')
         except (TypeError, ValueError):
             out.append(f'{who}: "checked_on" must be a date as YYYY-MM-DD')
@@ -113,10 +123,10 @@ class Checker(unittest.TestCase):
                 d['services'][0][k[2:]] = v
             else:
                 d[k] = v
-        return problems(d, 'ZZ.json', today=date(2026, 11, 21))
+        return problems(d, 'ZZ.json', latest=date(2026, 11, 22))
 
     def test_a_sound_table_passes(self):
-        self.assertEqual(problems(self.GOOD, 'ZZ.json', today=date(2026, 11, 21)), [])
+        self.assertEqual(problems(self.GOOD, 'ZZ.json', latest=date(2026, 11, 22)), [])
 
     def test_no_source_fails(self):
         self.assertTrue(self.bad(s_source=''))
@@ -134,7 +144,21 @@ class Checker(unittest.TestCase):
         self.assertTrue(self.bad(s_checked_on='20261101'))
 
     def test_a_date_in_the_future_fails(self):
+        self.assertFalse(self.bad(s_checked_on='2026-11-22'))   # the last day allowed
+        self.assertTrue(self.bad(s_checked_on='2026-11-23'))    # one day past it
         self.assertTrue(self.bad(s_checked_on='2026-12-01'))
+
+    def test_the_last_day_allowed_is_the_same_whatever_the_machine_clock_says(self):
+        """Fixed moments, not the real clock. 10:00 UTC is midnight in UTC+14: from then on, that next day has begun
+        somewhere, so a number checked there may carry it; one minute earlier it has not."""
+        utc = timezone.utc
+        for now, day in ((datetime(2026, 11, 21, 9, 59, tzinfo=utc), date(2026, 11, 21)),
+                         (datetime(2026, 11, 21, 10, 0, tzinfo=utc), date(2026, 11, 22)),
+                         (datetime(2026, 11, 21, 23, 59, tzinfo=utc), date(2026, 11, 22)),
+                         (datetime(2026, 11, 22, 0, 0, tzinfo=utc), date(2026, 11, 22)),
+                         (datetime(2026, 11, 22, 9, 59, tzinfo=timezone(timedelta(hours=-11))), date(2026, 11, 23))):
+            with self.subTest(now=now.isoformat()):
+                self.assertEqual(latest_checked_date(now), day)
 
     def test_a_number_that_is_not_a_number_fails(self):
         for n in ('', 'call 911', '9-1-1', '911.', None, 911):
@@ -152,8 +176,8 @@ class Checker(unittest.TestCase):
         self.assertFalse(self.bad(s_works_from=[]))
 
     def test_the_file_name_must_match_the_code(self):
-        self.assertTrue(problems(self.GOOD, 'zz.json', today=date(2026, 11, 21)))
-        self.assertTrue(problems(self.GOOD, 'YY.json', today=date(2026, 11, 21)))
+        self.assertTrue(problems(self.GOOD, 'zz.json', latest=date(2026, 11, 22)))
+        self.assertTrue(problems(self.GOOD, 'YY.json', latest=date(2026, 11, 22)))
 
     def test_general_must_be_a_listed_number(self):
         self.assertTrue(self.bad(general='112'))
