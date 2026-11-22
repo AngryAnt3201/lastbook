@@ -98,7 +98,7 @@
   const mapName = id => id === 'us' ? 'the whole US' : (mapById(id) || {}).title || id;
   /* the detailed map the library will have once the chosen pack is in: the person's state map, or the one the pack carries */
   const PACK_MAP = { medium: 'CA', all: 'us' };   // what the packs carry today; a manifest packs[].map, when there, wins
-  const packMap = id => { const p = packById(id) || {}; return 'map' in p ? p.map || null : PACK_MAP[id] || null };
+  const packMap = id => { const p = packById(id) || {}; return p.map || PACK_MAP[id] || null };   // validate() nulls an omitted packs[].map, so a null falls back to what the pack carries
   const mapNow = () => { const c = cur() || {}; return choice.pack && choice.pack !== c.pack ? packMap(choice.pack) : (c.map && c.map !== 'base' ? c.map : packMap(c.pack)) };
   const canSkipMap = () => { const n = mapNow(); return !n || n === 'us' };   // Small carries no state map, All carries every one; Medium carries its own
   const skippedMap = () => choice.map === 'none' && canSkipMap();   // the person chose no local map; add one later from Settings

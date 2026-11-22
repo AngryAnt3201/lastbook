@@ -3926,12 +3926,16 @@ console.log(errorBox({error, items: [{kind, state: 'failed', bytes_done: 0, erro
 
 @unittest.skipUnless(shutil.which('node'), 'Node is not installed')
 class SkipMap(unittest.TestCase):
-    """#267: setup can finish without a state map on Small (no state map) and All (every state's), not on Medium (California's)."""
+    """#267: setup can finish without a state map on Small (no state map) and All (every state's), not on Medium (California's).
+
+    The fixture uses the validated-manifest shape: validate() keeps a published packs[].map only when it
+    names a map, so entries that omit it all arrive as None (engine/setup/manifest.py). The skip option
+    must still describe each pack's actual result."""
     def run_helpers(self, pack, picked, current=None):
         source = (ROOT / 'web/setup.js').read_text(encoding='utf-8')
         start = source.index('  const packs =')
         helpers = source[start:source.index('  const packDl =', start)]
-        state = {'manifest': {'packs': [{'id': 'small', 'map': None}, {'id': 'medium', 'map': 'CA'}, {'id': 'all', 'map': 'us'}],
+        state = {'manifest': {'packs': [{'id': 'small', 'map': None}, {'id': 'medium', 'map': None}, {'id': 'all', 'map': None}],
                               'maps': [{'id': 'CA', 'title': 'California'}], 'address_indexes': [{'id': 'CA', 'available': True}]},
                  'current': current}
         script = (f'const S = {json.dumps(state)};\nconst choice = {json.dumps({"pack": pack, "ai": False, "map": picked})};\n' + helpers +
@@ -3956,6 +3960,14 @@ class SkipMap(unittest.TestCase):
     def test_library_with_a_map_offers_no_skip(self):   # Library and local AI: a Small library that already has a state map keeps it
         current = {'pack': 'small', 'map': 'CA', 'address_indexes': ['CA']}
         self.assertEqual(self.run_helpers('small', None, current), {'offered': False, 'skipped': False, 'missing': False, 'state': 'CA', 'map': None, 'address': None})
+
+    def test_validated_manifest_nulls_an_omitted_pack_map(self):   # the shape above is what validate() really outputs
+        file = {'name': 'small.zip', 'url': 'https://127.0.0.1/small.zip', 'size': 10, 'sha256': '0' * 64}
+        raw = {'version': 1, 'packs': [{'id': 'small', 'title': 'Small', 'files': [file]},
+                                       {'id': 'medium', 'title': 'Medium', 'files': [file], 'map': 'CA'}]}
+        packs = {p['id']: p for p in manifest.validate(raw, allowed=ALLOWED)['packs']}
+        self.assertIsNone(packs['small']['map'])
+        self.assertEqual(packs['medium']['map'], 'CA')
 
 
 @unittest.skipUnless(os.environ.get('LASTBOOK_FULL_DISK') == '1' and sys.platform == 'darwin', 'LASTBOOK_FULL_DISK=1 on a Mac')
