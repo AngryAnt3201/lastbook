@@ -8,7 +8,7 @@ import llm_local
 
 class FakeProcess:
     def poll(self):
-        return None
+        return 0
 
 
 class StartupTimeoutTests(unittest.TestCase):
@@ -74,6 +74,29 @@ class StartupTimeoutTests(unittest.TestCase):
              patch.object(llm_local.time, "sleep", side_effect=sleep):
             self.assertIsNone(local.ensure_running())
         self.assertEqual(local.state, "ready")
+
+    def test_status_lock_is_available_during_slow_shutdown(self):
+        local = self.make_local()
+        clock = [0.0]
+        shutdown_checked = []
+        def finish_stop(proc, why):
+            # This callback represents a child that has not finished shutting
+            # down yet. The status lock must not be owned by the waiter.
+            acquired = []
+            def read_status():
+                with local.lock:
+                    acquired.append((local.state, local.proc))
+            thread = threading.Thread(target=read_status)
+            thread.start()
+            thread.join(timeout=1)
+            shutdown_checked.append((not thread.is_alive(), acquired))
+            if thread.is_alive():
+                thread.join(timeout=1)
+        local._finish_stop = finish_stop
+        with patch.object(llm_local.time, "time", side_effect=lambda: clock[0]), \
+             patch.object(llm_local.time, "sleep", side_effect=lambda _: clock.__setitem__(0, 600.0)):
+            self.assertIn("too long", local.ensure_running())
+        self.assertEqual(shutdown_checked, [(True, [("stopped", None)])])
 
     def test_cancel_does_not_kill_shared_loader(self):
         local = self.make_local()
