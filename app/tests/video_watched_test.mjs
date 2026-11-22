@@ -5,6 +5,32 @@ import vm from 'node:vm';
 
 const appSource = readFileSync(new URL('../../web/app.js', import.meta.url), 'utf8');
 
+// Extract watch progress, watched state, and resumable definitions directly from web/app.js
+const progStart = appSource.indexOf('const vprog = () =>');
+const progEnd = appSource.indexOf('/* --------------------------------------------------------------- data -- */');
+assert.ok(progStart >= 0 && progEnd > progStart, 'watch progress and resumable found in web/app.js');
+const storageSnippet = appSource.slice(progStart, progEnd);
+
+// Extract the resume calculation expression from watch() in web/app.js
+const resumeExprMatch = appSource.match(/const resumeAt = (start === null && !isWatched[^;]+);/);
+assert.ok(resumeExprMatch, 'resumeAt calculation found in web/app.js');
+const resumeSnippet = `function getResumeAt(id, t, d) {
+  const p = vprog()[id];
+  const start = t !== null && Number.isFinite(+t) && +t >= 0 ? +t : null;
+  return ${resumeExprMatch[1]};
+}`;
+
+// Extract card badge and watched button directly from web/app.js
+const btnStart = appSource.indexOf('const watchedButton =');
+const btnEnd = appSource.indexOf('\ndocument.addEventListener', btnStart);
+assert.ok(btnStart >= 0 && btnEnd > btnStart, 'watchedButton found in web/app.js');
+const buttonSnippet = appSource.slice(btnStart, btnEnd);
+
+const vcardStart = appSource.indexOf('function vcard(v, opts = {}) {');
+const vcardEnd = appSource.indexOf('\nfunction rail(', vcardStart);
+assert.ok(vcardStart >= 0 && vcardEnd > vcardStart, 'vcard found in web/app.js');
+const vcardSnippet = appSource.slice(vcardStart, vcardEnd);
+
 function setupEnvironment() {
   const memory = new Map();
   const storage = {
@@ -20,7 +46,6 @@ function setupEnvironment() {
     set(k, v) { storage.setItem('sg.' + k, JSON.stringify(v)) },
   };
 
-  // Extract the functions from app.js
   let clock = 10000;
   const context = vm.createContext({
     store,
@@ -32,43 +57,22 @@ function setupEnvironment() {
     Math,
     HELD: {},
     held: async ids => ids,
+    ico: n => '<svg>' + n + '</svg>',
+    clock: s => String(s),
+    esc: s => String(s ?? ''),
+    fromQ: () => '',
+    fileUrl: p => '/' + p,
   });
 
-  // Extract relevant definitions: vprog, vwatched, setWatched, isWatched, setVprog, resumable
-  const snippet = `
-    const vprog = () => store.get('vprog', {});
-    const vwatched = () => store.get('vwatched', {});
-    function setWatched(id, state) {
-      const w = vwatched();
-      if (state == null) delete w[id]; else w[id] = !!state;
-      store.set('vwatched', w);
-    }
-    function isWatched(id, p, v) {
-      const w = vwatched();
-      if (w[id] !== undefined) return w[id];
-      p = p || vprog()[id];
-      const dur = (v && v.duration) || (p && p.d);
-      return Boolean(p && p.t && dur && p.t >= dur * 0.9);
-    }
-    function setVprog(id, data) {
-      const p = vprog();
-      p[id] = { ...(p[id] || {}), ...data, at: Date.now() };
-      const keys = Object.keys(p).sort((a, b) => p[b].at - p[a].at).slice(0, 60);
-      store.set('vprog', Object.fromEntries(keys.map(k => [k, p[k]])));
-    }
-    async function resumable(n = 60) {
-      const list = Object.entries(vprog()).filter(([id, v]) => !isWatched(id, v) && v.t > 10 && (!v.d || v.t < v.d - 15)).sort((a, b) => b[1].at - a[1].at).slice(0, n);
-      const ok = new Set(await held(list.map(([id]) => id)));
-      return list.filter(([id]) => ok.has(id));
-    }
-    function getResumeAt(id, t, d) {
-      const p = vprog()[id];
-      const start = t !== null && Number.isFinite(+t) && +t >= 0 ? +t : null;
-      return start === null && !isWatched(id, p, d) && p && p.t > 15 && (!d.duration || p.t < d.duration - 20) ? p.t : 0;
-    }
-  `;
+  vm.runInContext(storageSnippet, context);
+  vm.runInContext(resumeSnippet, context);
+  vm.runInContext(buttonSnippet, context);
+  vm.runInContext(vcardSnippet, context);
 
-  vm.runInContext(snippet, context);
+  context.vprog = vm.runInContext('vprog', context);
+  context.vwatched = vm.runInContext('vwatched', context);
+  context.watchedButton = vm.runInContext('watchedButton', context);
+
   return { context, store, memory };
 }
 
@@ -85,6 +89,12 @@ let checks = 0;
   const list = await context.resumable();
   assert.equal(list.length, 1, 'in-progress video is listed in resumable');
   assert.equal(list[0][0], 'vid-1');
+
+  const card = context.vcard({ id: 'vid-1', title: 'Video 1', duration: 100 });
+  assert.ok(!card.includes('class="vcheck"'), 'in-progress card has no checkmark');
+  const btn = context.watchedButton('vid-1', { duration: 100 });
+  assert.ok(btn.includes('aria-pressed="false"'), 'watched button is unpressed');
+  assert.ok(btn.includes('Mark watched'), 'button label is Mark watched');
   checks++;
 }
 
@@ -104,6 +114,12 @@ let checks = 0;
   // Verify stored progress position was NOT destroyed
   const prog = store.get('vprog', {});
   assert.equal(prog['vid-1'].t, 30, 'saved position is preserved in vprog');
+
+  const card = context.vcard({ id: 'vid-1', title: 'Video 1', duration: 100 });
+  assert.ok(card.includes('class="vcheck"'), 'watched card displays vcheck badge');
+  const btn = context.watchedButton('vid-1', { duration: 100 });
+  assert.ok(btn.includes('aria-pressed="true"'), 'watched button is pressed');
+  assert.ok(btn.includes('Watched'), 'button label is Watched');
   checks++;
 }
 
@@ -122,6 +138,12 @@ let checks = 0;
   assert.equal(list.length, 1, 'video reappears in resumable list');
   assert.equal(list[0][0], 'vid-1');
   assert.equal(list[0][1].t, 30, 'saved timestamp is intact');
+
+  const card = context.vcard({ id: 'vid-1', title: 'Video 1', duration: 100 });
+  assert.ok(!card.includes('class="vcheck"'), 'unmarked card removes vcheck badge');
+  const btn = context.watchedButton('vid-1', { duration: 100 });
+  assert.ok(btn.includes('aria-pressed="false"'), 'watched button is unpressed again');
+  assert.ok(btn.includes('Mark watched'), 'button label is Mark watched again');
   checks++;
 }
 
@@ -150,6 +172,27 @@ let checks = 0;
   assert.equal(context.isWatched('auto-vid'), true, 'auto-detected as watched past 90%');
   const list = await context.resumable();
   assert.equal(list.length, 0, 'auto-completed video is excluded from resumable');
+  checks++;
+}
+
+// Test 6: Confirm that omitting the watched filter from resumable causes the acceptance check to fail
+{
+  const { context } = setupEnvironment();
+  context.setVprog('filter-test-vid', { t: 40, d: 100, title: 'Filter Test Video' });
+  context.setWatched('filter-test-vid', true);
+
+  // Shipped resumable correctly excludes watched
+  const shippedList = await context.resumable();
+  assert.equal(shippedList.length, 0, 'shipped resumable excludes watched video');
+
+  // Synthetic unpatched resumable (without !isWatched filter) reproduces maintainer scratch scenario:
+  const unpatchedResumable = async (n = 60) => {
+    const list = Object.entries(context.vprog()).filter(([id, v]) => v.t > 10 && (!v.d || v.t < v.d - 15)).sort((a, b) => b[1].at - a[1].at).slice(0, n);
+    const ok = new Set(await context.held(list.map(([id]) => id)));
+    return list.filter(([id]) => ok.has(id));
+  };
+  const unpatchedList = await unpatchedResumable();
+  assert.equal(unpatchedList.length, 1, 'resumable without isWatched filter includes watched video');
   checks++;
 }
 

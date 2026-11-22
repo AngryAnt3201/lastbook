@@ -17,7 +17,7 @@ class VideoWatched(unittest.TestCase):
             capture_output=True, text=True, encoding='utf-8', timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('"checks":5', result.stdout)
+        self.assertIn('"checks":6', result.stdout)
 
 
 if __name__ == '__main__':
