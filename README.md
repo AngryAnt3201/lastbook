@@ -256,8 +256,11 @@ before running them. Their disposable test distro is named `LastbookTest`, with 
 - **State maps** are one US state's detailed map set, built by `packaging/build_packs.py map <ST>` and published by
   `packaging/state_maps.py`, with per-state address indexes from `packaging/address_indexes.py`. A state map replaces the
   library's map set; it never merges with it. Medium already holds California and All the whole US. A European
-  country's map set is built and published the same way (`map eu-<iso>`, entry kind `country`; the country's box is
-  its Geofabrik extract's bounding box, from `packaging/europe-countries.json`); address indexes stay US-only.
+  country's map set is built the same way (`map eu-<iso>`, entry kind `country`; the country's box is its Geofabrik
+  extract's bounding box, from `packaging/europe-countries.json`), but publishing is opt-in:
+  `packaging/country-publication.json` is empty because the detail layers are still US-only, and
+  `packaging/state_maps.py` refuses a country whose built set has no detailed roads, help and water points, terrain,
+  buildings, crops or OpenStreetMap place names inside its box. Address indexes stay US-only.
 - **The local AI** is optional: Gemma 4 26B A4B (Unsloth's `gemma-4-26B-A4B-it-UD-Q4_K_M.gguf`, about 17 GB). The file
   name, size, SHA-256 and Hugging Face revision are pinned in `llm_local.py`. Setup offers it only where the measured fit
   says it fits (about 18 GB of memory for model and context, plus a reserve) and says why in plain words when it does not.
@@ -286,7 +289,8 @@ before running them. Their disposable test distro is named `LastbookTest`, with 
 See [the contributor test instructions](CONTRIBUTING.md#test) for the unit test command and platform requirements.
 
 `packaging/test_pack_tools.py SAMPLE WORK` checks the pack tools against a pack sample
-(`build_packs.py build <pack> --sample N`). The `mac_*` and `win_*`
+(`build_packs.py build <pack> --sample N`). `python3 -B packaging/test_state_maps.py` checks the country-publishing
+guard without source data. The `mac_*` and `win_*`
 scripts in `app/tests/` drive a real build against a real data folder, and their paths are placeholders
 (`/path/to/lastbook`, `C:\Users\you\app-test`) to set for your own machine.
 

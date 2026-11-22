@@ -198,6 +198,14 @@ source layers' own coverage, exactly as a state's is. Setup needs no change: a m
 either way. Address indexes stay US-only — their source (Overture addresses) is split by US state, so there is no
 country entry to publish until that source is keyed by country.
 
+Publishing a country set is opt-in. `packaging/state_maps.py --order` and `--worker` only include countries listed in
+`packaging/country-publication.json`; that file is empty because the detailed source layers are still US-only. Before
+zipping or uploading a listed country, the publisher checks the built set and fails if it holds no detailed roads,
+help or water points, terrain, buildings, crops or OpenStreetMap place names inside the country box. A base-only build
+therefore never reaches the manifest as an available country map. A country is added to that file only after a source
+snapshot for it passes the check and setup can show the set's attribution. This PR says nothing about the completeness
+of any country's map: with today's sources, a country build is the low-zoom base only.
+
 Built by setup-backend (2026-11-12):
 - Job item `kind: "map"` comes after the pack and before the model: `waiting`, `downloading`, `unpacking` (bytes of
   `installed_bytes`), `done`. With a pack, the state's files replace the pack's own map set inside the staged library.

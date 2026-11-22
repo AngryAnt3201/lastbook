@@ -1,8 +1,9 @@
 """Build, check, zip, upload and list one region's detailed map (docs/SETUP-API.md, "State maps"): a US state, or a
-European country ('eu-<iso>' codes, packaging/europe-countries.json).
+European country ('eu-<iso>' codes, packaging/europe-countries.json). Country publishing is opt-in: only countries in
+packaging/country-publication.json are offered, and each must hold real detail inside its box or it is not published.
 
   derived/app-build/mac-venv/bin/python3 -I -B packaging/state_maps.py CA TX eu-at ...   # one region at a time, in this order
-  ... packaging/state_maps.py --order                                              # every region, in release order
+  ... packaging/state_maps.py --order                                              # every published region, in release order
 
 Each region: build (CA and RI are kept as built), scan, zip to derived/packs/state-zips/, upload to maps/ on the bucket,
 check the public SHA-256, list it under "maps" in derived/release/manifest-v1.json and upload that, then delete the zip
@@ -41,6 +42,7 @@ NAMES = dict(AL='Alabama', AK='Alaska', AZ='Arizona', AR='Arkansas', CA='Califor
              SC='South Carolina', SD='South Dakota', TN='Tennessee', TX='Texas', UT='Utah', VT='Vermont', VA='Virginia', WA='Washington',
              WV='West Virginia', WI='Wisconsin', WY='Wyoming')
 COUNTRIES = {code: c['title'] for code, c in json.loads((ROOT / 'packaging' / 'europe-countries.json').read_text(encoding='utf-8'))['countries'].items()}
+PUBLISHED_COUNTRIES = json.loads((ROOT / 'packaging' / 'country-publication.json').read_text(encoding='utf-8'))['countries']
 TITLES = {**NAMES, **COUNTRIES}
 INCLUDES = 'Local streets, buildings, terrain and crops, plus water, help and resource points'
 ALLOWED = {f'derived/geo/{n}.sqlite' for n in ('national', 'map', 'water', 'terrain', 'buildings', 'crops', 'places')} | {
@@ -64,9 +66,52 @@ def states():
 
 
 def regions():
-    """Every region a map is published for, in release order: the states as states() has them, then the European
-    countries by name. A country's code is its own ('eu-de'), never a state's, so the two never collide."""
-    return states() + sorted(COUNTRIES, key=lambda c: COUNTRIES[c])
+    """Every region a map is published for, in release order: the states as states() has them, then the countries a
+    person has opted in to in packaging/country-publication.json, by name. A country's code is its own ('eu-de'), never
+    a state's, so the two never collide. Countries are left out by default: the detail layers are still US-only, so an
+    unlisted country build would be only the low-zoom base and must not be offered as that country's detailed map."""
+    return states() + sorted(PUBLISHED_COUNTRIES, key=lambda c: COUNTRIES[c])
+
+
+COVERAGE = {
+    'roads': ('national.sqlite', 'SELECT count(*) FROM feat WHERE minz>8'),
+    'help points': ('national.sqlite', 'SELECT count(*) FROM poi'),
+    'water points': ('water.sqlite', 'SELECT count(*) FROM resource'),
+    'terrain tiles': ('terrain.sqlite', 'SELECT count(*) FROM tile WHERE z>7'),
+    'buildings': ('buildings.sqlite', 'SELECT count(*) FROM bldg'),
+    'crops': ('crops.sqlite', 'SELECT count(*) FROM resource'),
+    'place names': ('places.sqlite', "SELECT count(*) FROM place WHERE source='OpenStreetMap'"),
+}
+
+
+def coverage_counts(d):
+    """How much detail a built country set really holds, per layer. The base map supplies low-zoom roads and terrain
+    and no pins; a US-only source snapshot gives zero here for a European country even though the scan passes."""
+    d = Path(d)
+    counts = {}
+    for name, (file, query) in COVERAGE.items():
+        try:
+            db = sqlite3.connect(f'file:{d / "derived/geo" / file}?immutable=1', uri=True)
+            try:
+                counts[name] = db.execute(query).fetchone()[0]
+            finally:
+                db.close()
+        except sqlite3.Error:
+            counts[name] = 0
+    return counts
+
+
+def country_coverage(d):
+    """The detail layers that hold nothing inside this country's box. Empty means the coverage check passed."""
+    return {name: n for name, n in coverage_counts(d).items() if not n}
+
+
+def country_publish_blockers(d, code):
+    """Why a country set may not be published, or [] if its opt-in and coverage are both in order."""
+    if code not in PUBLISHED_COUNTRIES:
+        return ['publishing a country is opt-in: add it to packaging/country-publication.json only after its source snapshot passes the coverage check']
+    missing = country_coverage(d)
+    return [f'no {name} detail inside the country box' for name in missing]
 
 
 def sha_file(p):
@@ -275,6 +320,10 @@ def one_state(ctx, code, res):
     if fails:
         sys.exit(f'{code} scan failed: {fails}')
     log(code, 'scan passed', dict((k, len(v)) for k, v in listed.items()))
+    blockers = country_publish_blockers(d, code) if code in COUNTRIES else []
+    if blockers:
+        sys.exit(f'{code}: not publishing: {blockers}')
+    coverage = coverage_counts(d) if code in COUNTRIES else None
     installed = sum((d / rel).stat().st_size for rel in ALLOWED)
     ZIPS.mkdir(exist_ok=True)
     z = ZIPS / f'Lastbook-Map-{code}.zip'
@@ -296,6 +345,8 @@ def one_state(ctx, code, res):
         res.clear()
         res.update(json.loads(RESULTS.read_text()) if RESULTS.exists() else {})
         res[code] = {'size': size, 'installed_bytes': installed, 'sha256': sha, 'url': url, 'web_address_text': web, 'seconds': round(time.time() - t0)}
+        if coverage is not None:
+            res[code]['coverage'] = coverage
         tmp = RESULTS.with_suffix('.tmp')
         tmp.write_text(json.dumps(res, indent=1) + '\n')
         os.replace(tmp, RESULTS)
