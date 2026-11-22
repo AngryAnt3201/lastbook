@@ -37,6 +37,10 @@ def latest_checked_date(now=None):
     return (now.astimezone(timezone.utc) + timedelta(hours=14)).date()
 
 
+def source(x):
+    return isinstance(x, str) and bool(SOURCE.match(x))
+
+
 def words(x):
     return isinstance(x, list) and bool(x) and all(isinstance(w, str) and w.strip() and w == w.lower() for w in x)
 
@@ -82,9 +86,16 @@ def problems(data, name, latest=None):
         k = s.get('keywords')
         if not isinstance(k, dict) or not words(k.get('local')) or not words(k.get('en')):
             out.append(f'{who}: "keywords" needs lower-case "local" and "en" word lists')
+        # Each claim about how the number can be reached has its own source, so an editor can check it alone.
+        if s.get('works_from') and not source(s.get('works_from_source')):
+            out.append(f'{who}: "works_from" is listed, so "works_from_source" must be the address of the page that says so')
+        if 'free' not in s or s['free'] not in (True, False, None):
+            out.append(f'{who}: "free" must be true, false or null (null: the sources do not say)')
+        elif s['free'] is not None and not source(s.get('free_source')):
+            out.append(f'{who}: "free" is {str(s["free"]).lower()}, so "free_source" must be the address of the page that says so')
         if not isinstance(s.get('when'), str):
             out.append(f'{who}: "when" must be a string (empty if there is nothing to add)')
-        if not isinstance(s.get('source'), str) or not SOURCE.match(s['source']):
+        if not source(s.get('source')):
             out.append(f'{who}: "source" must be the web address of the page the number was read from')
         c = s.get('checked_on')
         try:
@@ -136,6 +147,7 @@ class Checker(unittest.TestCase):
         'services': [{
             'kind': 'general', 'name': 'Emergency', 'number': '911', 'how': ['call'],
             'works_from': ['mobile', 'landline'], 'keywords': {'local': ['emergencia'], 'en': ['emergency']},
+            'works_from_source': 'https://example.org/dialling', 'free': True, 'free_source': 'https://example.org/costs',
             'when': '', 'source': 'https://example.org/numbers', 'checked_on': '2026-11-01', 'verified': 'official'}],
     }
 
@@ -189,6 +201,18 @@ class Checker(unittest.TestCase):
                 self.assertTrue(self.bad(s_number=n))
         self.assertFalse(self.bad(s_number='+56 2 2635 3800', general=None))
         self.assertFalse(self.bad(s_number='*4141', general=None))
+
+    def test_a_claim_without_its_own_source_fails(self):
+        self.assertTrue(self.bad(s_works_from_source=''))
+        self.assertTrue(self.bad(s_free_source=None))
+        self.assertTrue(self.bad(s_free='yes'))
+        d = copy.deepcopy(self.GOOD)
+        del d['services'][0]['free']
+        self.assertTrue(problems(d, 'ZZ.json'))
+
+    def test_a_claim_left_unknown_needs_no_source(self):
+        self.assertFalse(self.bad(s_works_from=[], s_works_from_source=None, s_free=None, s_free_source=None))
+        self.assertFalse(self.bad(s_free=False))
 
     def test_unknown_words_fail(self):
         self.assertTrue(self.bad(s_kind='hospital'))

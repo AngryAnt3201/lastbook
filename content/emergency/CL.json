@@ -27,10 +27,13 @@
           "emergency"
         ]
       },
-      "when": "Ambulance and medical emergencies, nationwide, answered by Ministry of Health staff. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21). From a landline or a mobile, dial only the number (Decreto 747 of 2000, art. 15).",
+      "when": "Ambulance and medical emergencies, nationwide, answered by Ministry of Health staff.",
       "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
       "checked_on": "2026-11-22",
-      "verified": "official"
+      "verified": "official",
+      "works_from_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=173931&idParte=8511373",
+      "free": true,
+      "free_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=1059429&idParte=9406426"
     },
     {
       "kind": "fire",
@@ -56,10 +59,13 @@
           "rescue"
         ]
       },
-      "when": "Emergency calls answered by the Cuerpo de Bomberos de Chile: fires and accidents. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21). From a landline or a mobile, dial only the number (Decreto 747 of 2000, art. 15).",
+      "when": "Emergency calls answered by the Cuerpo de Bomberos de Chile: fires and accidents.",
       "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
       "checked_on": "2026-11-22",
-      "verified": "official"
+      "verified": "official",
+      "works_from_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=173931&idParte=8511373",
+      "free": true,
+      "free_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=1059429&idParte=9406426"
     },
     {
       "kind": "police",
@@ -84,10 +90,13 @@
           "crime"
         ]
       },
-      "when": "Emergency calls answered by Carabineros: robberies, assaults, traffic and other events that seriously affect people. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21). From a landline or a mobile, dial only the number (Decreto 747 of 2000, art. 15).",
+      "when": "Emergency calls answered by Carabineros: robberies, assaults, traffic and other events that seriously affect people.",
       "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
       "checked_on": "2026-11-22",
-      "verified": "official"
+      "verified": "official",
+      "works_from_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=173931&idParte=8511373",
+      "free": true,
+      "free_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=1059429&idParte=9406426"
     },
     {
       "kind": "police",
@@ -113,10 +122,13 @@
           "investigations"
         ]
       },
-      "when": "Emergency calls answered by the Policía de Investigaciones. The crime-report page of ChileAtiende also gives it for crimes in progress. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21). From a landline or a mobile, dial only the number (Decreto 747 of 2000, art. 15).",
+      "when": "Emergency calls answered by the Policía de Investigaciones. The crime-report page of ChileAtiende also gives it for crimes in progress.",
       "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
       "checked_on": "2026-11-22",
-      "verified": "official"
+      "verified": "official",
+      "works_from_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=173931&idParte=8511373",
+      "free": true,
+      "free_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=1059429&idParte=9406426"
     },
     {
       "kind": "fire",
@@ -142,10 +154,13 @@
           "bushfire"
         ]
       },
-      "when": "Emergency calls about forest fires, and reports of them. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21). From a landline or a mobile, dial only the number (Decreto 747 of 2000, art. 15).",
+      "when": "Emergency calls about forest fires, and reports of them.",
       "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
       "checked_on": "2026-11-22",
-      "verified": "official"
+      "verified": "official",
+      "works_from_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=173931&idParte=8511373",
+      "free": true,
+      "free_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=1059429&idParte=9406426"
     },
     {
       "kind": "other",
@@ -179,10 +194,13 @@
           "boat"
         ]
       },
-      "when": "Emergency calls answered by the Armada de Chile: accidents on beaches and rocks, port accidents, ships in distress and similar. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21). From a landline or a mobile, dial only the number (Decreto 747 of 2000, art. 15).",
+      "when": "Emergency calls answered by the Armada de Chile: accidents on beaches and rocks, port accidents, ships in distress and similar.",
       "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
       "checked_on": "2026-11-22",
-      "verified": "official"
+      "verified": "official",
+      "works_from_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=173931&idParte=8511373",
+      "free": true,
+      "free_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=1059429&idParte=9406426"
     },
     {
       "kind": "poison",
@@ -209,7 +227,8 @@
       "when": "Poisoning. Its page does not say whether it covers the whole country. For a life-threatening poisoning call SAMU 131 first.",
       "source": "https://cituc.uc.cl/",
       "checked_on": "2026-11-21",
-      "verified": "official"
+      "verified": "official",
+      "free": null
     },
     {
       "kind": "crisis",
@@ -219,8 +238,7 @@
         "call"
       ],
       "works_from": [
-        "mobile",
-        "landline"
+        "mobile"
       ],
       "keywords": {
         "local": [
@@ -239,7 +257,10 @@
       "when": "Free, confidential support from trained staff, 24 hours every day. For danger right now, call SAMU 131.",
       "source": "https://www.minsal.cl/prevencion-del-suicidio/",
       "checked_on": "2026-11-22",
-      "verified": "official"
+      "verified": "official",
+      "works_from_source": "https://www.minsal.cl/prevencion-del-suicidio/",
+      "free": true,
+      "free_source": "https://www.minsal.cl/prevencion-del-suicidio/"
     }
   ]
 }
