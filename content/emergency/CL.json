@@ -1,0 +1,220 @@
+{
+  "country": "Chile",
+  "code": "CL",
+  "calling_code": "+56",
+  "general": null,
+  "services": [
+    {
+      "kind": "ambulance",
+      "name": "SAMU",
+      "number": "131",
+      "how": [
+        "call"
+      ],
+      "works_from": [],
+      "keywords": {
+        "local": [
+          "ambulancia",
+          "samu",
+          "urgencia",
+          "emergencia"
+        ],
+        "en": [
+          "ambulance",
+          "emergency"
+        ]
+      },
+      "when": "Ambulance and medical emergencies, nationwide, answered by Ministry of Health staff. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21).",
+      "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
+      "checked_on": "2026-11-22",
+      "verified": "official"
+    },
+    {
+      "kind": "fire",
+      "name": "Bomberos",
+      "number": "132",
+      "how": [
+        "call"
+      ],
+      "works_from": [],
+      "keywords": {
+        "local": [
+          "bomberos",
+          "incendio",
+          "accidente",
+          "rescate"
+        ],
+        "en": [
+          "fire",
+          "firefighters",
+          "rescue"
+        ]
+      },
+      "when": "Emergency calls answered by the Cuerpo de Bomberos de Chile: fires and accidents. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21).",
+      "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
+      "checked_on": "2026-11-22",
+      "verified": "official"
+    },
+    {
+      "kind": "police",
+      "name": "Carabineros de Chile",
+      "number": "133",
+      "how": [
+        "call"
+      ],
+      "works_from": [],
+      "keywords": {
+        "local": [
+          "carabineros",
+          "policía",
+          "robo",
+          "seguridad"
+        ],
+        "en": [
+          "police",
+          "crime"
+        ]
+      },
+      "when": "Emergency calls answered by Carabineros: robberies, assaults, traffic and other events that seriously affect people. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21).",
+      "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
+      "checked_on": "2026-11-22",
+      "verified": "official"
+    },
+    {
+      "kind": "police",
+      "name": "Policía de Investigaciones (PDI)",
+      "number": "134",
+      "how": [
+        "call"
+      ],
+      "works_from": [],
+      "keywords": {
+        "local": [
+          "pdi",
+          "investigaciones",
+          "delito",
+          "policía"
+        ],
+        "en": [
+          "police",
+          "crime",
+          "investigations"
+        ]
+      },
+      "when": "Emergency calls answered by the Policía de Investigaciones. The crime-report page of ChileAtiende also gives it for crimes in progress. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21).",
+      "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
+      "checked_on": "2026-11-22",
+      "verified": "official"
+    },
+    {
+      "kind": "fire",
+      "name": "Incendios forestales (CONAF)",
+      "number": "130",
+      "how": [
+        "call"
+      ],
+      "works_from": [],
+      "keywords": {
+        "local": [
+          "incendio forestal",
+          "incendios forestales",
+          "conaf",
+          "quema"
+        ],
+        "en": [
+          "wildfire",
+          "forest fire",
+          "bushfire"
+        ]
+      },
+      "when": "Emergency calls about forest fires, and reports of them. Free: calls to emergency numbers are exempt from payment (Decreto 18 of 2014, art. 21).",
+      "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
+      "checked_on": "2026-11-22",
+      "verified": "official"
+    },
+    {
+      "kind": "poison",
+      "name": "CITUC (Centro de Información Toxicológica, Universidad Católica)",
+      "number": "+56 2 2635 3800",
+      "how": [
+        "call"
+      ],
+      "works_from": [],
+      "keywords": {
+        "local": [
+          "intoxicación",
+          "envenenamiento",
+          "tóxico",
+          "toxicológica",
+          "cituc"
+        ],
+        "en": [
+          "poison",
+          "poisoning",
+          "toxic"
+        ]
+      },
+      "when": "Poisoning. Its page does not say whether it covers the whole country. For a life-threatening poisoning call SAMU 131 first.",
+      "source": "https://cituc.uc.cl/",
+      "checked_on": "2026-11-21",
+      "verified": "official"
+    },
+    {
+      "kind": "crisis",
+      "name": "Línea de Prevención del Suicidio (Ministerio de Salud)",
+      "number": "*4141",
+      "how": [
+        "call"
+      ],
+      "works_from": [
+        "mobile",
+        "landline"
+      ],
+      "keywords": {
+        "local": [
+          "suicidio",
+          "crisis",
+          "salud mental",
+          "no estás solo"
+        ],
+        "en": [
+          "suicide",
+          "suicide prevention",
+          "crisis line",
+          "mental health"
+        ]
+      },
+      "when": "Free, confidential support from trained staff, 24 hours every day. For danger right now, call SAMU 131.",
+      "source": "https://www.minsal.cl/prevencion-del-suicidio/",
+      "checked_on": "2026-11-22",
+      "verified": "official"
+    },
+    {
+      "kind": "other",
+      "name": "Salud Responde (Ministerio de Salud)",
+      "number": "600 360 7777",
+      "how": [
+        "call"
+      ],
+      "works_from": [
+        "mobile",
+        "landline"
+      ],
+      "keywords": {
+        "local": [
+          "salud responde",
+          "consulta de salud",
+          "minsal"
+        ],
+        "en": [
+          "health advice line",
+          "health hotline"
+        ]
+      },
+      "when": "Health advice, 24 hours every day. Not for emergencies: urgent cases go to SAMU 131. Charged at the local-call rate.",
+      "source": "https://saludresponde.minsal.cl/preguntas-frecuentes-de-nuestro-servicio/",
+      "checked_on": "2026-11-21",
+      "verified": "official"
+    }
+  ]
+}
