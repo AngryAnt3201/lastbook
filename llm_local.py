@@ -266,32 +266,28 @@ class Local:
             if self.state != 'loading':
                 self._spawn()
         t0 = time.time()
-        # A slow load that is still getting further is left to finish: only START_WAIT seconds with no step forward end it.
-        # Stopping it would not help, because the next question would start again from nothing and stop at the same place.
-        while time.time() - max(t0, self.t_progress) < START_WAIT:
+        # Progress is timestamped by the reader under the same lock. Check the
+        # deadline and stop atomically so progress at the boundary cannot be lost.
+        with self.lock:
+            waiting_for = self.proc
+        while True:
             with self.lock:
+                if self.proc is not waiting_for:
+                    return self.message or 'The local AI start was interrupted.'
                 if self.state == 'ready':
                     self.last_used = time.time()
                     return None
                 if self.state != 'loading':
                     return self.message or 'The local AI did not start.'
+                if time.time() - max(t0, self.t_progress) >= START_WAIT:
+                    self.stop('took too long to start')
+                    return 'The local AI took too long to start.'
+                pct = self.pct
             if cancelled():
                 return 'stopped'
             if on_wait:
-                on_wait(self.pct)
+                on_wait(pct)
             time.sleep(0.25)
-        # The reader may report progress between the while-condition and this lock.
-        # Recheck before killing the shared runner, and never stop a replacement.
-        with self.lock:
-            if self.state == 'ready':
-                self.last_used = time.time()
-                return None
-            if self.state != 'loading':
-                return self.message or 'The local AI did not start.'
-            if time.time() - max(t0, self.t_progress) < START_WAIT:
-                return self.ensure_running(on_wait=on_wait, cancelled=cancelled)
-            self.stop('took too long to start')
-        return 'The local AI took too long to start.'
 
     def _spawn(self):
         import queue
