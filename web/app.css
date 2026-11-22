@@ -980,3 +980,18 @@ body.map-maxed{overflow:hidden}
   html.wcap .mapwrap.max,html.wcap .chat-side.open{top:var(--cap-h)}   /* the title bar stays, as in Windows' own apps */
   html.wcap:fullscreen .capband,html.wcap:has(:fullscreen) .capband{display:none}   /* nothing of the band, its drag area included, over a page in full screen */
 }
+
+/* Contribute */
+.contribute{max-width:680px}
+.contribute-help{margin:10px 0 20px;max-width:35em;color:var(--ink2)}
+.contribute-card{display:grid;gap:8px}
+.contribute-card label{font-weight:650}
+.contribute-card label .muted{font-weight:400}
+.contribute-card input,.contribute-card textarea{box-sizing:border-box;display:block;width:100%;padding:10px 12px;border:1px solid var(--line2);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
+.contribute-card input{margin-bottom:8px}
+.contribute-card textarea{line-height:1.45;resize:vertical;min-height:7.5em}
+.contribute-actions{display:flex;align-items:center;flex-wrap:wrap;gap:14px;margin-top:5px}
+.contribute-link{font-weight:600}
+.contribute-note{margin:2px 0 0}
+#contrib-status{margin:0}
+#contrib-status:empty{display:none}

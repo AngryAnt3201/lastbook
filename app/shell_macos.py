@@ -8,7 +8,7 @@ The rules this file carries out (bridge.py decides, this file obeys):
   - The top level shows the app's own page and nothing else.
   - A frame shows library paths only.
   - A frame runs no scripts (a second layer under the engine's Content-Security-Policy), and a saved page opens nothing.
-  - Nothing reaches the network: NO_NETWORK blocks every load but the app's own, before the first page. Nothing is ever handed to a browser or another program.
+  - Nothing reaches the network: NO_NETWORK blocks every load but the app's own, before the first page. Only the explicit Contribute action opens the project repository in the system browser.
 """
 import ctypes
 import json
@@ -26,6 +26,7 @@ import WebKit
 from PyObjCTools import AppHelper
 
 import bridge as B
+from contribute import launch_project_repository
 
 SCHEME = 'lastbook'
 HOME = B.ORIGIN_MAC + '/'
@@ -397,7 +398,7 @@ class _Guard(Foundation.NSObject):
 
     def webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(self, webview, config, action, features):
         try:
-            self.shell.leave(str(action.request().URL().absoluteString()), _from_top(action), _gesture(action))
+            self.shell.leave(str(action.request().URL().absoluteString()), _from_top(action), _gesture(action), popup=True)
         except Exception:
             traceback.print_exc()
         return None
@@ -565,7 +566,7 @@ class Shell:
             own_blob = url.startswith('blob:' + B.ORIGIN_MAC + '/')   # the chat's "save this conversation", and nothing else in the UI
             return POLICY_DOWNLOAD if own_blob and from_top and gesture is not False else POLICY_CANCEL
         if target is None:                 # a link with target=_blank: WebKit asks here first
-            self.leave(url, from_top, gesture)
+            self.leave(url, from_top, gesture, popup=True)
             return POLICY_CANCEL
         if target.isMainFrame():
             if self.bridge.top_url_ok(url) and (from_top or action.sourceFrame() is None):   # no frame: this program's own go_home
@@ -579,10 +580,12 @@ class Shell:
             self.bridge.give_ticket(url)   # only the app's own page earns a whole large answer
         return POLICY_ALLOW
 
-    def leave(self, url, from_top, gesture):
+    def leave(self, url, from_top, gesture, *, popup=False):
         """The one window stays. See bridge.new_window for what happens instead."""
-        what, where = self.bridge.new_window(url, from_top, gesture)
-        if what == 'inside':
+        what, where = self.bridge.new_window(url, from_top, gesture, popup=popup)
+        if what == 'contribute':
+            launch_project_repository()
+        elif what == 'inside':
             route = where[len(HOME):] or '#/'
             self.view.evaluateJavaScript_completionHandler_('location.hash=' + json.dumps(route), None)
 

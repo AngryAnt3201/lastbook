@@ -8,6 +8,8 @@ const main = $('#main');
 const i18n = globalThis.LastbookI18n;
 const IN_WINDOW = location.protocol === 'lastbook:' || location.hostname === 'lastbook.invalid';   // the desktop app, not a browser over the server
 if (IN_WINDOW) $('#sideSettings').hidden = false;   // Library and local AI (web/setup.html) is in the desktop app only
+const CAN_CONTRIBUTE = IN_WINDOW && !document.documentElement.classList.contains('lb-embed');
+if (CAN_CONTRIBUTE) $('#sideContribute').hidden = false;
 $('.skip').addEventListener('click', e => { e.preventDefault(); main.focus() });
 
 /* ---------------------------------------------------------------- icons -- */
@@ -255,7 +257,7 @@ function parse() {
   return { parts: path.split('/').filter(Boolean).map(decodeURIComponent), q: new URLSearchParams(qs || '') };
 }
 // The sidebar row each page belongs to. Reading pages stay under Library, articles under Encyclopedias; search results select no row.
-const NAV_OF = { '': 'videos', guides: 'guides', t: 'guides', ask: 'ask', videos: 'videos', watch: 'videos', map: 'map', library: 'library', learn: 'library', browse: 'library', shelf: 'library', collection: 'library', read: 'library', wiki: 'encyclopedias', search: '', saved: 'saved', 'not-found': 'library', encyclopedias: 'encyclopedias', prepare: 'prepare', about: 'about' };
+const NAV_OF = { '': 'videos', guides: 'guides', t: 'guides', ask: 'ask', videos: 'videos', watch: 'videos', map: 'map', library: 'library', learn: 'library', browse: 'library', shelf: 'library', collection: 'library', read: 'library', wiki: 'encyclopedias', search: '', saved: 'saved', 'not-found': 'library', encyclopedias: 'encyclopedias', prepare: 'prepare', about: 'about', contribute: 'contribute' };
 let leaving = null;  // cleanup hook for the current view (player, chat stream…)
 async function route() {
   const cameFromSide = !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('.side,.tabbar'));
@@ -305,6 +307,7 @@ async function route() {
     else if (v === 'not-found') await notFoundPage();
     else if (v === 'shelf') await shelfPage(parts[1], q.get('kind') || 'all', q.get('q') || '');
     else if (v === 'collection') await collectionPage(q.get('name') || '', q.get('from'));
+    else if (v === 'contribute' && CAN_CONTRIBUTE) contributePage();
     else if (v === 'about') await about();
     else notFound();
   } catch (e) { setTitle(''); document.body.className = 'v-error'; main.innerHTML = emptyState('warn', 'This page could not be opened', e.message || e) }   // v-error: not a reading page, so a phone keeps its tab bar
@@ -1354,6 +1357,53 @@ async function localAI(action) {
   try { await fetch('/api/assistant/local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) }) } catch { }
   setTimeout(() => { if (location.hash.startsWith('#/about')) route() }, 400);
 }
+
+function contributePage() {
+  setTitle('Contribute to Lastbook');
+  main.innerHTML = `<section class="contribute">
+    <h1 data-i18n="contribute.title">Contribute to Lastbook</h1>
+    <p class="lead" data-i18n="contribute.welcome">We’re building Lastbook together. We need you.</p>
+    <p class="contribute-help" data-i18n="contribute.help">Describe one idea and copy the prompt into your AI. You can review the change before it opens a pull request.</p>
+    <div class="card contribute-card">
+      <label for="contrib-idea"><span data-i18n="contribute.idea">Your idea</span> <span class="muted" data-i18n="contribute.optional">(optional)</span></label>
+      <input id="contrib-idea" type="text" maxlength="300" placeholder="Example: Make offline map labels easier to read" data-i18n-placeholder="contribute.example">
+      <label for="contrib-prompt" data-i18n="contribute.prompt">Prompt for your AI</label>
+      <textarea id="contrib-prompt" rows="6" spellcheck="false"></textarea>
+      <div class="contribute-actions">
+        <button class="btn" id="copy-contrib" type="button" data-i18n="contribute.copy">Copy prompt</button>
+        <a class="contribute-link" id="github-contrib" href="/contribute/github" target="_blank" rel="noopener"><span data-i18n="contribute.github">Open GitHub</span> <span aria-hidden="true">↗</span></a>
+      </div>
+      <p class="small muted contribute-note" data-i18n="contribute.local">Your idea stays on this device until you share it.</p>
+      <p role="status" class="small" id="contrib-status"></p>
+    </div>
+  </section>`;
+  const idea = $('#contrib-idea'), prompt = $('#contrib-prompt'), status = $('#contrib-status');
+  const sync = () => {
+    prompt.value = 'Read CONTRIBUTING.md in github.com/Immortal-Protocols/lastbook.\n\n'
+      + (idea.value.trim() ? 'Make one focused change in a fork: ' + idea.value.trim()
+         : 'Help me choose a small improvement and make one focused change in a fork.')
+      + '\n\nRun the relevant tests and prepare a pull request. Explain what changed and what you tested. Wait for my approval before opening the PR.';
+  };
+  sync();
+  idea.addEventListener('input', sync);
+  $('#copy-contrib').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(prompt.value);
+      status.dataset.i18n = 'contribute.copiedMessage';
+      status.textContent = 'Prompt copied.';
+      $('#copy-contrib').dataset.i18n = 'contribute.copied';
+      $('#copy-contrib').textContent = 'Copied';
+      translateRendered();
+    } catch {
+      prompt.focus();
+      prompt.select();
+      status.dataset.i18n = 'contribute.copyFallback';
+      status.textContent = 'Prompt selected. Press your copy shortcut.';
+      translateRendered(status);
+    }
+  });
+}
+
 async function about() {
   setTitle('About this library');
   let dl = {}, st = {};
