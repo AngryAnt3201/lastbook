@@ -105,7 +105,7 @@ function isWatched(id, p, v) {
 const HELD = {};
 const held = ids => Promise.all(ids.map(id => HELD[id] ?? (HELD[id] = fetch('/api/doc/' + encodeURIComponent(id)).then(r => r.status !== 404 && r.status !== 400).catch(() => true)))).then(ok => ids.filter((_, i) => ok[i]));
 async function resumable(n = 60) {
-  const list = Object.entries(vprog()).filter(([, v]) => v.t > 10 && (!v.d || v.t < v.d - 15)).sort((a, b) => b[1].at - a[1].at).slice(0, n);
+  const list = Object.entries(vprog()).filter(([id, v]) => !isWatched(id, v) && v.t > 10 && (!v.d || v.t < v.d - 15)).sort((a, b) => b[1].at - a[1].at).slice(0, n);
   const ok = new Set(await held(list.map(([id]) => id)));
   return list.filter(([id]) => ok.has(id));
 }
@@ -652,7 +652,7 @@ async function watch(id, t, from) {
   remember({ key: 'v:' + id, title: d.title, href: selfHref, sub: 'Video · ' + fmtDur(d.duration) });
   const p = vprog()[id];
   const start = t !== null && Number.isFinite(+t) && +t >= 0 ? +t : null;
-  const resumeAt = start === null && p && p.t > 15 && (!d.duration || p.t < d.duration - 20) ? p.t : 0;
+  const resumeAt = start === null && !isWatched(id, p, d) && p && p.t > 15 && (!d.duration || p.t < d.duration - 20) ? p.t : 0;
   main.innerHTML = `<div class="rtop">${backButton(from, ['nav.videos', 'Videos'])}</div>
   <div class="watch">
     <div>
@@ -703,6 +703,7 @@ async function watch(id, t, from) {
     b.setAttribute('aria-pressed', w);
     b.title = w ? 'Mark as unwatched' : 'Mark as watched';
     const sp = $('span', b); if (sp) sp.textContent = w ? 'Watched' : 'Mark watched';
+    const res = $('#resume'); if (res) res.hidden = w;
   };
   const bWatched = $('#markWatched');
   if (bWatched) {
