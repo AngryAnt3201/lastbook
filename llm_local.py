@@ -280,9 +280,16 @@ class Local:
                 if self.state != 'loading':
                     return self.message or 'The local AI did not start.'
                 if time.time() - max(t0, self.t_progress) >= START_WAIT:
-                    self.stop('took too long to start')
-                    return 'The local AI took too long to start.'
-                pct = self.pct
+                    # Detach atomically with the deadline check, then let the
+                    # potentially slow child shutdown happen outside this lock.
+                    timed_out_proc, self.proc = self.proc, None
+                    self.state, self.pct, self.message = 'stopped', None, ''
+                else:
+                    timed_out_proc = None
+                    pct = self.pct
+            if timed_out_proc is not None:
+                self._finish_stop(timed_out_proc, 'took too long to start')
+                return 'The local AI took too long to start.'
             if cancelled():
                 return 'stopped'
             if on_wait:
@@ -360,6 +367,10 @@ class Local:
             if self.state in ('ready', 'loading', 'error') and self.path and (self.fit or {}).get('fits'):
                 self.state, self.pct = 'stopped', None
                 self.message = ''
+        self._finish_stop(proc, why)
+
+    @staticmethod
+    def _finish_stop(proc, why=''):
         if proc and proc.poll() is None:
             print(f'local AI: stopping ({why or "asked"})', flush=True)
             try:
