@@ -2,9 +2,15 @@
 # Builds the image with harmless sentinel files placed where private or local files would be, saves it, and checks
 # that no layer and no image metadata holds any of them, by name or by content. Run from the top of the repository:
 #   bash packaging/docker/check_image.sh
-# It creates only files that are not there yet, and removes exactly those when it ends.
+# It creates only files that are not there yet, and removes exactly those when it ends. Works with Bash 3.2 (macOS):
+# with set -u, Bash before 4.4 calls an empty array unbound, so arrays that can be empty expand as ${a[@]+"${a[@]}"}.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+# Only BuildKit reads Dockerfile.dockerignore; the legacy builder would copy in what it keeps out. So the image is built
+# with `docker buildx build --load`, which is always BuildKit (plain `docker build` is not with a daemon older than
+# Docker 23) and always lands in the local image store (with a docker-container builder it otherwise stays in the
+# build cache).
+docker buildx version >/dev/null 2>&1 || { echo "needs the docker buildx plugin (Docker Desktop has it)"; exit 2; }
 
 TOKEN="lastbook-sentinel-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
 TAG="lastbook-image-check:$$"
@@ -12,7 +18,7 @@ WORK=$(mktemp -d)
 MADE=() DIRS=()
 
 cleanup() {
-    for f in "${MADE[@]}"; do rm -f "$f"; done
+    for f in ${MADE[@]+"${MADE[@]}"}; do rm -f "$f"; done
     for ((i=${#DIRS[@]}-1; i>=0; i--)); do rmdir "${DIRS[i]}" 2>/dev/null || true; done   # only the folders made here
     rm -rf "$WORK"
     docker rmi -f "$TAG" >/dev/null 2>&1 || true
@@ -22,9 +28,9 @@ trap cleanup EXIT
 plant() {    # plant <path>: a file holding the token, only if nothing is there
     [ -e "$1" ] && { echo "skip (exists): $1"; return; }
     local d=$(dirname "$1") new=()
-    while [ "$d" != . ] && [ ! -d "$d" ]; do new=("$d" "${new[@]}"); d=$(dirname "$d"); done
+    while [ "$d" != . ] && [ ! -d "$d" ]; do new=("$d" ${new[@]+"${new[@]}"}); d=$(dirname "$d"); done
     mkdir -p "$(dirname "$1")"
-    DIRS+=("${new[@]}")
+    DIRS+=(${new[@]+"${new[@]}"})
     printf '%s\n' "$TOKEN" > "$1"
     MADE+=("$1")
 }
@@ -51,12 +57,12 @@ plant packaging/docker/.env
 plant packaging/docker/secrets.txt
 
 echo "building $TAG with ${#MADE[@]} sentinel files"
-docker build -q -f packaging/docker/Dockerfile -t "$TAG" . >/dev/null
+docker buildx build -q --load -f packaging/docker/Dockerfile -t "$TAG" . >/dev/null
 docker save "$TAG" -o "$WORK/image.tar"
 mkdir "$WORK/x" && tar -xf "$WORK/image.tar" -C "$WORK/x"
 
 # A layer path ending in a planted file's own path, wherever the image put it (sed escapes it for grep -E).
-printf '%s\n' "${MADE[@]}" | sed -e 's#[.[\*^$()+?{|]#\\&#g' -e 's#^#(^|.*/)#' > "$WORK/paths"
+printf '%s\n' ${MADE[@]+"${MADE[@]}"} | sed -e 's#[.[\*^$()+?{|]#\\&#g' -e 's#^#(^|.*/)#' > "$WORK/paths"
 fail=0 layers=0 found_server=0
 while IFS= read -r -d '' blob; do
     if tar -tf "$blob" >/dev/null 2>&1; then list() { tar -tf "$blob"; }; body() { tar -xOf "$blob"; }
