@@ -6,7 +6,7 @@
 Two parts: the real files are checked, and the checker itself is shown to fail on a row with no source, no date or a
 number that is not a number, so a passing run means something.
 """
-import copy, json, re, sys, unittest
+import copy, json, os, re, sys, unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -20,6 +20,12 @@ VERIFIED = {'official', 'found_online'}
 NUMBER = re.compile(r'^[+*]?[0-9][0-9 ]*$')
 CALLING_CODE = re.compile(r'^\+[0-9]{1,4}$')
 SOURCE = re.compile(r'^https?://[^\s/]+\.[^\s/]+\S*$')
+
+
+# The last day a number in content/emergency/ may be dated. The real files are checked against this day, not against the
+# computer's clock, so the result is the same on every machine and every day, even where the clock or the time zone is
+# off. Whoever adds or re-checks a number sets it to that day, in the same change. A row dated after it fails.
+REFERENCE_DATE = date(2026, 11, 22)
 
 
 def latest_checked_date(now=None):
@@ -86,7 +92,7 @@ def problems(data, name, latest=None):
             if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', c):
                 raise ValueError
             if d > latest:
-                out.append(f'{who}: "checked_on" {c} is in the future')
+                out.append(f'{who}: "checked_on" {c} is after the last allowed day, {latest}')
         except (TypeError, ValueError):
             out.append(f'{who}: "checked_on" must be a date as YYYY-MM-DD')
         if s.get('verified') not in VERIFIED:
@@ -98,13 +104,30 @@ def problems(data, name, latest=None):
 
 
 class Files(unittest.TestCase):
-    def test_every_file_is_sound(self):
+    def check_all(self, latest):
         files = sorted(DIR.glob('*.json'))
         self.assertTrue(files, 'no country files in content/emergency/')
         for f in files:
             with self.subTest(f.name):
                 data = json.loads(f.read_text(encoding='utf-8'))
-                self.assertEqual(problems(data, f.name), [])
+                self.assertEqual(problems(data, f.name, latest=latest), [])
+
+    def test_every_file_is_sound(self):
+        """Against the fixed REFERENCE_DATE: needs no right clock."""
+        self.check_all(REFERENCE_DATE)
+
+    @unittest.skipUnless(os.environ.get('LASTBOOK_CHECK_CLOCK') == '1',
+                         "off by default: it trusts the clock of this computer; set LASTBOOK_CHECK_CLOCK=1 to run it")
+    def test_no_file_is_dated_in_the_future_by_the_clock(self):
+        """Against the computer's own clock (UTC+14 rule): catches a date later than the day it really is, which the
+        fixed REFERENCE_DATE cannot. Only as right as the clock of the computer that runs it."""
+        self.check_all(latest_checked_date())
+
+    def test_the_reference_date_is_not_older_than_the_data(self):
+        """Raising a row's date past REFERENCE_DATE fails the test above; this says why, in plain words."""
+        newest = max(date.fromisoformat(s['checked_on']) for f in DIR.glob('*.json')
+                     for s in json.loads(f.read_text(encoding='utf-8'))['services'])
+        self.assertLessEqual(newest, REFERENCE_DATE, 'a number is dated after REFERENCE_DATE: set REFERENCE_DATE to that day')
 
 
 class Checker(unittest.TestCase):
