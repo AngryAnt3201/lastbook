@@ -1,6 +1,7 @@
 """Check for updates (engine/update.py) against a local HTTPS test server (test_setup.py's). Never shipped.
 The check only says what is on the website: these tests also make sure nothing else can be asked of it.
 NoticesTest: the opt-in daily check behind the sidebar's "Update available" (consent, once a day, offline, stale notices).
+UpdateNowTest: About's Update now, only through a native updater the desktop app registers (app/update_macos.py), on a click.
 
 Run:  python3 app/tests/test_update.py
 """
@@ -121,7 +122,8 @@ class UpdateTest(unittest.TestCase):
             self.assertNotEqual(s['state'], 'available')
 
     def test_only_check_state_and_notices(self):
-        self.assertEqual(set(update.ROUTES), {('GET', 'state'), ('POST', 'check'), ('GET', 'notice'), ('POST', 'auto'), ('POST', 'open')})
+        self.assertEqual(set(update.ROUTES), {('GET', 'state'), ('POST', 'check'), ('GET', 'notice'), ('POST', 'auto'), ('POST', 'open'), ('POST', 'now')})
+        self.assertIsNone(update.NATIVE)                   # only the Mac shell sets one: the engine itself installs nothing
         for gone in ('download', 'install', 'stop', '_install_mac', '_install_windows'):
             self.assertFalse(hasattr(update.Updater, gone), gone)
             self.assertFalse(hasattr(update.Notices, gone), gone)
@@ -434,6 +436,91 @@ class NoticesTest(unittest.TestCase):
         with mock.patch.object(update.webbrowser, 'open_new_tab', return_value=False) as browser:
             self.assertIn('could not open your browser', update._open_download(n.u)['error'])
             browser.assert_called_once_with(update.DOWNLOAD_URL)
+
+
+class Native:
+    def __init__(self, ready=True, result=None):
+        self.is_ready, self.calls = ready, 0
+        self.result = result or {'started': True}
+
+    def ready(self):
+        return self.is_ready
+
+    def status(self):
+        return {'ready': self.is_ready, 'error': None if self.is_ready else 'off'}
+
+    def begin(self):
+        self.calls += 1
+        return dict(self.result)
+
+
+class UpdateNowTest(NoticesTest):
+    """Reuses NoticesTest's server and settings; none of its tests are run again here."""
+
+    def setUp(self):
+        super().setUp()
+        self.saved_native = update.NATIVE
+
+    def tearDown(self):
+        update.NATIVE = self.saved_native
+        super().tearDown()
+
+    def offered(self, native):
+        update.NATIVE = native
+        update.NOTICES = n = self.make()
+        with mock.patch.object(update, 'os_version', return_value='14.0'):
+            update.ROUTES[('POST', 'check')](n.u)
+            self.finish(n)
+        return n
+
+    def test_update_now_starts_only_on_its_own_route(self):
+        native = Native()
+        n = self.offered(native)
+        s = update.ROUTES[('GET', 'state')](n.u)
+        self.assertEqual((s['state'], s['can_update_now'], s['can_open_download']), ('available', True, True))
+        for route in (('GET', 'state'), ('POST', 'check'), ('GET', 'notice'), ('POST', 'auto')):
+            update.ROUTES[route](n.u)
+            self.finish(n)
+        self.assertEqual(native.calls, 0)                  # nothing but the click starts the updater
+        with mock.patch.object(update.webbrowser, 'open_new_tab') as browser:
+            self.assertEqual(update.ROUTES[('POST', 'now')](n.u), {'started': True})
+            browser.assert_not_called()
+        self.assertEqual(native.calls, 1)
+
+    def test_update_now_needs_an_offer(self):
+        native = Native()
+        update.NATIVE = native
+        update.NOTICES = n = self.make()
+        self.assertIn('Check for an update', update.ROUTES[('POST', 'now')](n.u)['error'])
+        self.assertEqual(native.calls, 0)
+
+    def test_download_page_without_a_trusted_native_updater(self):
+        for native in (None, Native(ready=False)):
+            n = self.offered(native)
+            s = update.ROUTES[('GET', 'state')](n.u)
+            self.assertFalse(s['can_update_now'])
+            self.assertTrue(s['can_open_download'])        # Windows, Linux, Mac builds without Sparkle: the download page
+            out = update.ROUTES[('POST', 'now')](n.u)
+            self.assertTrue(out['fallback'])
+            self.assertIn('download page', out['error'])
+            if native:
+                self.assertEqual(native.calls, 0)
+
+    def test_native_failure_falls_back(self):
+        n = self.offered(Native(result={'error': 'The updater could not start.'}))
+        out = update.ROUTES[('POST', 'now')](n.u)
+        self.assertEqual((out['error'], out['fallback']), ('The updater could not start.', True))
+
+    def test_server_version_never_offers_update_now(self):
+        update.NATIVE, update.NOTICES = Native(), None
+        u = update.Updater(key='mac', version='1.1.2')
+        self.assertFalse(update.ROUTES[('GET', 'state')](u)['can_update_now'])
+        self.assertTrue(update.ROUTES[('POST', 'now')](u)['fallback'])
+        self.assertEqual(update.NATIVE.calls, 0)
+
+
+for name in [k for k in vars(NoticesTest) if k.startswith('test_')]:
+    setattr(UpdateNowTest, name, None)
 
 
 if __name__ == '__main__':

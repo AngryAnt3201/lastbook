@@ -1,15 +1,17 @@
 """Check for updates, in the desktop app: when the person asks (About's button, or Lastbook > Check for Updates… on a Mac), and,
 only for someone who turned on "Notify me about app updates", at most once a day while the app's window is open (Notices below).
-The check only says whether a newer version is on the website. The app can open its official installer page in the system browser
-when the person selects Get update.
+The check only says whether a newer version is on the website. Then About offers one of:
+  - Update now, only on a Mac build with a trusted Sparkle setup (app/update_macos.py, NATIVE here): pressing it starts Sparkle,
+    which asks the person, verifies the signed archive, replaces Lastbook.app and relaunches. This module never downloads or runs it.
+  - Open download page everywhere else (Windows, Linux, Mac builds without that setup, or when Sparkle fails): the official
+    installer page in the system browser.
 
   - One small GET of METADATA through engine/setup/download.py, the one way out (HTTPS, no proxy). Only https://downloads.lastbook.org
     on port 443 is accepted, also after a redirect: not the bucket's r2.dev address, not Hugging Face.
   - METADATA (app-v1.json at the bucket root) is display information only: {"version": 1, "mac": {"version", "min_os"}, "windows": {...}}.
     Other fields (url, size, sha256, notes) may be there for later; they are not read.
-  - Later, with Developer ID and Authenticode signing: signed metadata (an Ed25519 key in the app) and an in-app install. Not before.
 
-Routes, under /api/update/: GET state; POST check; GET notice; POST auto; POST open. Notices and the browser handoff require the
+Routes, under /api/update/: GET state; POST check; GET notice; POST auto; POST open; POST now (Update now: NATIVE only). Notices and the browser handoff require the
 desktop app to call configure(). The setting itself is changed through
 /api/setup/updates (Setup and Settings), which calls Notices.set_notify.
 """
@@ -408,6 +410,7 @@ class Notices:
 
 UPDATER = None
 NOTICES = None
+NATIVE = None        # app/update_macos.Native on a Mac: ready(), status(), begin(). None elsewhere: no Update now.
 
 
 def updater():
@@ -428,15 +431,33 @@ def _with_notice(s):
     s['notice'] = NOTICES.notice()['available'] if NOTICES else None
     s['download_url'] = DOWNLOAD_URL
     s['can_open_download'] = NOTICES is not None and bool(_ver(s['current']))
+    native = NATIVE.status() if NATIVE is not None and s['can_open_download'] else {'ready': False, 'error': None}
+    s['can_update_now'] = native['ready']
+    s['update_now_error'] = native['error']
     return s
+
+
+def _has_offer(u):
+    return u.state(manual=True)['state'] == 'available' or bool(NOTICES.notice()['available'])
+
+
+def _update_now(u):
+    """Update now: starts the native updater, which asks the person before anything is installed. Takes nothing from the request."""
+    if NATIVE is None or NOTICES is None or not _ver(u.version) or not NATIVE.ready():
+        return {'error': 'This copy of Lastbook cannot update itself. Use the download page instead.', 'fallback': True}
+    if not _has_offer(u):
+        return {'error': 'Check for an update again first.'}
+    out = NATIVE.begin()
+    if 'error' in out:
+        out['fallback'] = True
+    return out
 
 
 def _open_download(u):
     """The desktop app's only browser handoff. The destination comes from this code, never the feed or the request."""
     if NOTICES is None or not _ver(u.version):
         return {'error': 'Open lastbook.org/download/ in your browser for the installer.'}
-    state = u.state(manual=True)
-    if state['state'] != 'available' and not NOTICES.notice()['available']:
+    if not _has_offer(u):
         return {'error': 'Check for an update again before opening the installer page.'}
     try:
         if webbrowser.open_new_tab(DOWNLOAD_URL):
@@ -452,6 +473,7 @@ ROUTES = {
     ('GET', 'notice'): lambda u: NOTICES.notice() if NOTICES else dict(OFF),
     ('POST', 'auto'): lambda u: NOTICES.auto() if NOTICES else dict(OFF),
     ('POST', 'open'): _open_download,
+    ('POST', 'now'): _update_now,
 }
 
 

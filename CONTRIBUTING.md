@@ -48,7 +48,9 @@ not installed by the requirements files, are never packaged, and are listed with
 
 - No telemetry, analytics, crash reporting, fonts or scripts from the web. App update checks
   (`engine/update.py`) use only `downloads.lastbook.org`. The person can check manually or opt into daily notices.
-  Notices default to off. **Get update** opens the official download page only when the person selects it.
+  Notices default to off. **Open download page** opens the official download page only when the person selects it.
+  **Update now** (Mac builds with a pinned Sparkle and its public key only: `docs/UPDATE-NOW-MAC.md`) starts Sparkle on that click,
+  never before; nothing checks or downloads in the background.
 - Our own pages (`web/`) contain no web address. The build fails if they do.
 - A new dependency must work fully offline, and must not open a socket or start a server. Say in the pull request what
   it is, its licence, and why it is needed, and add it to `THIRD_PARTY_NOTICES.md`.

@@ -1,6 +1,10 @@
 /* Check for updates, in About (desktop app only). A check runs when the person presses Check for updates, or chooses
    Lastbook > Check for Updates… (the menu calls LBUpdate.fromMenu; no address starts it). It only says whether a newer version
-   is on the website: nothing is downloaded or installed, and no system notification is shown. engine/update.py does the check.
+   is on the website, and no system notification is shown. engine/update.py does the check.
+
+   When a newer version is known, About offers Update now only where the app can update itself (a Mac build with a trusted Sparkle
+   setup: can_update_now). Pressing it starts the native updater, which asks before installing and relaunches Lastbook; this page
+   sends no address or file. Everywhere else, and whenever that fails, the button is Open download page (the system browser).
 
    Opt-in notices (watch): the sidebar's "Update available" row, shown only while "Notify me about app updates" is on (Setup,
    Settings) and a check found a newer version for this system. This page only nudges the engine (POST /api/update/auto) soon after
@@ -25,10 +29,14 @@
        offline), where the failure is shown above the still-valid offer. up_to_date, too_old_os and not_published replace it. */
     const failed = s.state === 'error';
     const found = s.state === 'available' ? s.version : s.state === 'idle' || failed ? s.notice : null;
+    const now = !!s.can_update_now;
     if (found) return `${ver}${failed ? ` <span class="upd-line" role="alert">${E(s.message)}</span>` : ''} Version ${E(found)} is available${failed ? ' (found by an earlier check)' : ''}.
-      <span class="upd-line">Run the installer to update Lastbook and keep your existing library.</span>
+      <span class="upd-line">${now ? 'Update now asks you to confirm, installs the signed update and restarts Lastbook. Your library, settings and chats stay as they are.'
+                                    : 'Run the installer to update Lastbook and keep your existing library.'}</span>
+      ${s.update_now_error ? `<span class="upd-line" role="alert">${E(s.update_now_error)}</span>` : ''}
       <span class="upd-actions">
-        ${s.can_open_download ? '<button class="btn" data-upd="open">Get update</button>' : ''}
+        ${now ? '<button class="btn" data-upd="now">Update now</button>' : ''}
+        ${s.can_open_download ? `<button class="btn${now ? ' plain' : ''}" data-upd="open">Open download page</button>` : ''}
         ${s.download_url ? `<button class="btn plain" data-upd="copy" data-url="${E(s.download_url)}"${s.can_open_download ? ' hidden' : ''}>Copy download link</button>` : ''}
         ${btn(failed ? 'Try again' : 'Check again')}
       </span>
@@ -99,6 +107,31 @@
     if (copy) copy.hidden = false;
   }
 
+  async function updateNow(button, el) {
+    const status = el.querySelector('[data-upd-status]');
+    button.disabled = true;
+    status.textContent = '';
+    try {
+      const result = await call('now');
+      if (result.started) {
+        status.textContent = 'The updater is opening. Confirm in its window to install; Lastbook restarts when it is done.';
+        setTimeout(async () => {      // the updater starts on the app's side: a failure to start comes back in state
+          try {
+            const s = await call('state');
+            if (s.update_now_error) { status.textContent = s.update_now_error; button.hidden = true }
+          } catch { }
+          button.disabled = false;
+        }, 1500);
+        return;
+      }
+      status.textContent = result.error || 'Lastbook could not start the update.';
+      if (result.fallback) button.hidden = true;
+    } catch {
+      status.textContent = 'Lastbook could not start the update. Use the download page instead.';
+    }
+    button.disabled = false;
+  }
+
   /* ---- the sidebar's notice */
   function showRow(n) {
     if (!row) return;
@@ -126,6 +159,7 @@
         if (button?.dataset.upd === 'check') check(el);
         if (button?.dataset.upd === 'copy') copyLink(button, el);
         if (button?.dataset.upd === 'open') openDownload(button, el);
+        if (button?.dataset.upd === 'now') updateNow(button, el);
       });
       if (menuAsked) { menuAsked = false; return check(el) }
       refresh(el);

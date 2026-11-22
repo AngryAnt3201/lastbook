@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # the build invoke
 import i18n_catalogs  # noqa: E402
 
 BAD_SEGMENTS = {'test', 'tests', 'testing', 'pytest', 'unittest', 'doctest', 'remote_storage', 'webview', 'bottle', 'proxy_tools', 'onnxruntime',
-                'tokenizers', 'shell_windows', 'shell_macos', 'clr', 'clr_loader', 'pythonnet', 'lastbook_launcher', 'tkinter', 'PyInstaller',
+                'tokenizers', 'shell_windows', 'shell_macos', 'update_macos', 'clr', 'clr_loader', 'pythonnet', 'lastbook_launcher', 'tkinter', 'PyInstaller',
                 'objc', 'AppKit', 'Foundation', 'PyObjCTools', 'vendor-macos', 'fixture', 'real_data_check', 'http_regression', 'cdp', 'f2py', 'pypdfium2_cli'}
 BAD_FILE = re.compile(r'(^|/)(test_[^/]*|[^/]*_test\.(py|pyc|so)|[^/]*_tests[^/]*\.so|[^/]*\.onnx|[^/]*\.gguf|mac_[^/]*|win_[^/]*)$', re.I)
 TEST_MARKERS = [b'TEST-STUB', b'mac_offscreen', b'stub_chat', b'stub-chat']

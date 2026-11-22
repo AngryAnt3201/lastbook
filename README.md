@@ -60,8 +60,9 @@ other Linux distributions have not been validated for this release.
   computer (a folder or a pack zip) can be used instead of downloading.
 - **App updates.** Choose **Notify me about app updates** in Settings or during first-time setup. Lastbook checks at most once
   every 24 hours while it is open and online. If a compatible version is available, the sidebar shows **Update available**.
-  Its **Get update** button opens the official download page. Run the new installer to update the app and keep your existing
-  library. You can also check manually in About or the Mac menu under Lastbook > Check for Updates….
+  On a Mac build that can update itself, About's **Update now** asks you to confirm, installs the signed update and restarts
+  Lastbook. Elsewhere, **Open download page** opens the official download page: run the new installer. Either way your existing
+  library, settings and chats stay as they are. You can also check manually in About or the Mac menu under Lastbook > Check for Updates….
 
 ## Privacy and network use
 
