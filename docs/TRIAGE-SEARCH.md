@@ -312,7 +312,7 @@ kw 25, .21, .20 / 107, .37, .36 / 113, .62, .65 / 117, .87, .85; hy 1, .23, 1.0 
 Inside conversations the same model ranks poorly (AUC 0.43-0.71), which is why a conversation only gets buttons.
 
 How the cuts were chosen: 0.60 buttons: first set at 0.75 (buttons on 68% of kw questions, 116 false alarms against
-17 slips) and moved to 0.60 by the project owner's decision (50% of kw questions, 70 false alarms, 34 slips); 0.25 "help me help you": the value
+17 slips) and moved to 0.60 by the project owner's decision (buttons on 43% of kw questions with the final model; 50%, 70 false alarms and 34 slips with the model of the time); 0.25 "help me help you": the value
 asked for, at which kw has 7% of questions below and 5 of 216 right first pages (3 red) caught, and every red one still gets its pages; 0.30 everyday:
 the lowest cut at which anything is caught among the 51 everyday questions ("how to build a root cellar", "tooth nocked out"),
 0.35 adds two right first pages. A model fitted for "one of the first 3 is right" was tried and dropped: it lets 2-4 times as many
