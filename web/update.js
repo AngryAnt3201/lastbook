@@ -20,13 +20,17 @@
   function view(s) {
     const btn = (t) => `<button class="btn plain" data-upd="check">${t}</button>`;
     const ver = s.current ? `Version ${E(s.current)}.` : 'This copy has no version number (it was not built as an app).';
-    const found = s.state === 'available' ? s.version : s.state !== 'checking' ? s.notice : null;
-    if (found) return `${ver} Version ${E(found)} is available.
+    /* The last verified notice stands in only when there is no newer verdict: nothing checked by the person yet (idle, which is
+       also what an automatic check looks like here, so its failures stay quiet), or the person's own check failed (error, e.g.
+       offline), where the failure is shown above the still-valid offer. up_to_date, too_old_os and not_published replace it. */
+    const failed = s.state === 'error';
+    const found = s.state === 'available' ? s.version : s.state === 'idle' || failed ? s.notice : null;
+    if (found) return `${ver}${failed ? ` <span class="upd-line" role="alert">${E(s.message)}</span>` : ''} Version ${E(found)} is available${failed ? ' (found by an earlier check)' : ''}.
       <span class="upd-line">Run the installer to update Lastbook and keep your existing library.</span>
       <span class="upd-actions">
         ${s.can_open_download ? '<button class="btn" data-upd="open">Get update</button>' : ''}
         ${s.download_url ? `<button class="btn plain" data-upd="copy" data-url="${E(s.download_url)}"${s.can_open_download ? ' hidden' : ''}>Copy download link</button>` : ''}
-        ${btn('Check again')}
+        ${btn(failed ? 'Try again' : 'Check again')}
       </span>
       <span class="upd-line" data-upd-status role="status"></span>
       <span class="upd-line" data-upd-address hidden>${E(s.download_url || '')}</span>`;
@@ -108,7 +112,7 @@
     try {
       const n = await call(action);
       showRow(n);
-      if (n && n.checking) rowTimer = setTimeout(() => sync('notice'), POLL);   // until the check under way has ended
+      if (n && n.notify && n.checking) rowTimer = setTimeout(() => sync('notice'), POLL);   // until the check under way has ended
     } catch { }      // quiet: the row stays as it was
   }
   const nudge = () => sync(navigator.onLine === false ? 'notice' : 'auto');
