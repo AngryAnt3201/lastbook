@@ -102,6 +102,7 @@
   const mapNow = () => { const c = cur() || {}; return choice.pack && choice.pack !== c.pack ? packMap(choice.pack) : (c.map && c.map !== 'base' ? c.map : packMap(c.pack)) };
   const canSkipMap = () => { const n = mapNow(); return !n || n === 'us' };   // Small carries no state map, All carries every one; Medium carries its own
   const skippedMap = () => choice.map === 'none' && canSkipMap();   // the person chose no local map; add one later from Settings
+  const setPack = id => { if (id !== choice.pack && choice.map === 'none') choice.map = null; choice.pack = id };   // 'none' means something different per pack, so a switch drops it and the person chooses again
   const selectedState = () => skippedMap() ? '' : ((choice.map !== 'none' && choice.map) || (mapNow() !== 'us' && mapNow()) || ((cur() || {}).address_indexes || [])[0] || '');
   const addresses = () => (S.manifest && S.manifest.address_indexes) || [];
   const addressById = id => addresses().find(a => a.id === id);
@@ -255,7 +256,7 @@
         <button class="s-link" id="haveFile">Choose a library zip or AI model file</button>
       </div>
       <p class="s-note" id="haveNote" hidden></p>`;
-    main.querySelectorAll('input[name=pack]').forEach(r => r.onchange = () => { choice.pack = r.value; shortfall = null; mapSection(); summary() });
+    main.querySelectorAll('input[name=pack]').forEach(r => r.onchange = () => { setPack(r.value); shortfall = null; mapSection(); summary() });
     const box = $('#aiBox'); if (box && !box.disabled) box.onchange = () => { choice.ai = box.checked; shortfall = null; summary() };
     main.querySelectorAll('[data-use]').forEach(b => b.onclick = () => useFile((S.found || [])[+b.dataset.use].path, b));
     $('#start').onclick = start;
@@ -482,10 +483,10 @@
       <p class="s-note${noteOk ? ' ok' : ''}" id="haveNote"${note ? '' : ' hidden'}>${esc(note)}</p>`;
     cloudPoll(c);
     $('#otherLib').onclick = () => haveLibrary(false, $('#otherLib'), { library: true });   // only another LastbookData, on a USB stick or another drive (#266)
-    if ($('#libraryUpdate')) $('#libraryUpdate').onclick = () => { choice.pack = c.pack; choice.ai = !!c.model; go('choose') };
-    if ($('#upgrade')) $('#upgrade').onclick = () => { choice.pack = bigger[0].id; choice.ai = !!c.model; go('choose') };
+    if ($('#libraryUpdate')) $('#libraryUpdate').onclick = () => { setPack(c.pack); choice.ai = !!c.model; go('choose') };
+    if ($('#upgrade')) $('#upgrade').onclick = () => { setPack(bigger[0].id); choice.ai = !!c.model; go('choose') };
     if ($('#mapCh')) $('#mapCh').onclick = () => { choice.pack = c.pack; choice.ai = !!c.model; choice.map = null; go('choose'); const m = $('#mapSel'); if (m) m.focus() };
-    if ($('#addAi')) $('#addAi').onclick = () => { choice.pack = c.pack; choice.ai = true; go('choose') };
+    if ($('#addAi')) $('#addAi').onclick = () => { setPack(c.pack); choice.ai = true; go('choose') };
     if ($('#rmAi')) $('#rmAi').onclick = () => { confirmRemove = true; manageView(); $('#rmNo').focus() };
     if ($('#rmNo')) $('#rmNo').onclick = () => { confirmRemove = false; manageView(); $('#rmAi').focus() };
     if ($('#rmYes')) $('#rmYes').onclick = () => act('remove-ai', 'The local AI was removed.');   // the engine stops the AI first

@@ -3944,6 +3944,20 @@ class SkipMap(unittest.TestCase):
         run = subprocess.run(['node', '-e', script], text=True, capture_output=True, check=True)
         return json.loads(run.stdout)
 
+    def run_switch(self, from_pack, to_pack, picked):
+        source = (ROOT / 'web/setup.js').read_text(encoding='utf-8')
+        start = source.index('  const packs =')
+        helpers = source[start:source.index('  const packDl =', start)]
+        state = {'manifest': {'packs': [{'id': 'small', 'map': None}, {'id': 'medium', 'map': None}, {'id': 'all', 'map': None}],
+                              'maps': [{'id': 'CA', 'title': 'California'}], 'address_indexes': [{'id': 'CA', 'available': True}]},
+                 'current': None}
+        script = (f'const S = {json.dumps(state)};\nconst choice = {json.dumps({"pack": from_pack, "ai": False, "map": picked})};\n' + helpers +
+                  f'\nsetPack({json.dumps(to_pack)});' +
+                  '\nconsole.log(JSON.stringify({kept: choice.map, offered: canSkipMap(), skipped: skippedMap(), missing: mapMissing(), state: selectedState(),'
+                  ' map: mapAdds() ? mapAdds().id : null, address: addressAdds() ? addressAdds().id : null}))')
+        run = subprocess.run(['node', '-e', script], text=True, capture_output=True, check=True)
+        return json.loads(run.stdout)
+
     def test_small_without_a_map(self):
         self.assertEqual(self.run_helpers('small', None), {'offered': True, 'skipped': False, 'missing': True, 'state': '', 'map': None, 'address': None})
         self.assertEqual(self.run_helpers('small', 'none'), {'offered': True, 'skipped': True, 'missing': False, 'state': '', 'map': None, 'address': None})
@@ -3960,6 +3974,26 @@ class SkipMap(unittest.TestCase):
     def test_library_with_a_map_offers_no_skip(self):   # Library and local AI: a Small library that already has a state map keeps it
         current = {'pack': 'small', 'map': 'CA', 'address_indexes': ['CA']}
         self.assertEqual(self.run_helpers('small', None, current), {'offered': False, 'skipped': False, 'missing': False, 'state': 'CA', 'map': None, 'address': None})
+
+    def test_switching_from_all_to_small_drops_the_skip(self):   # "no address search" must not become "no local map" by itself
+        self.assertEqual(self.run_switch('all', 'small', 'none'),
+                         {'kept': None, 'offered': True, 'skipped': False, 'missing': True, 'state': '', 'map': None, 'address': None})
+
+    def test_switching_from_small_to_all_drops_the_skip(self):   # "no local map" must not become "no address search" by itself
+        self.assertEqual(self.run_switch('small', 'all', 'none'),
+                         {'kept': None, 'offered': True, 'skipped': False, 'missing': True, 'state': '', 'map': None, 'address': None})
+
+    def test_switching_to_medium_drops_the_skip(self):   # the drop is harmless there: Medium resolves California either way
+        self.assertEqual(self.run_switch('small', 'medium', 'none'),
+                         {'kept': None, 'offered': False, 'skipped': False, 'missing': False, 'state': 'CA', 'map': None, 'address': 'CA'})
+
+    def test_switching_packs_keeps_a_chosen_state(self):
+        self.assertEqual(self.run_switch('small', 'all', 'CA'),
+                         {'kept': 'CA', 'offered': True, 'skipped': False, 'missing': False, 'state': 'CA', 'map': None, 'address': 'CA'})
+
+    def test_same_pack_keeps_the_skip(self):   # re-entering choose for the same pack changes nothing
+        self.assertEqual(self.run_switch('small', 'small', 'none'),
+                         {'kept': 'none', 'offered': True, 'skipped': True, 'missing': False, 'state': '', 'map': None, 'address': None})
 
     def test_validated_manifest_nulls_an_omitted_pack_map(self):   # the shape above is what validate() really outputs
         file = {'name': 'small.zip', 'url': 'https://127.0.0.1/small.zip', 'size': 10, 'sha256': '0' * 64}
