@@ -130,7 +130,7 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .top-search button{position:absolute;left:2px;top:50%;transform:translateY(-50%);width:30px;height:30px;border:0;background:transparent;color:var(--ink3);display:grid;place-items:center;pointer-events:none}
 .top-search button svg{width:16px;height:16px}
 .plat-mac .top-search input{border:0;border-radius:999px}   /* the capsule field of macOS 26 */
-.plat-mac .top-search input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 45%,transparent)}
+.plat-mac .top-search input:focus{box-shadow:0 0 0 3px var(--focus)}   /* the field's only focus mark, so at full strength: 3:1 or more against the toolbar (#237) */
 .plat-win .top-search input{height:34px}
 .plat-win .top-search input:focus{background:var(--paper);border-bottom:2px solid var(--sel)}
 body.home .top-search,.plat-mac body.v-search .top-search{visibility:hidden}
@@ -345,6 +345,9 @@ p{margin:.45em 0}
 @media (prefers-color-scheme:dark){
   :root .need .ico,:root .banner .ico,:root .starter .ico{background:color-mix(in srgb,var(--tc) 32%,var(--paper));color:color-mix(in oklab,var(--tc) 38%,#fff)}
   :root .skill .ico,:root .ghit .ico,:root details.more>summary .prep-ico{color:color-mix(in oklab,var(--tc) 38%,#fff)}
+  /* the same lift for a guide colour used as text: the step count on a skill card and the numbers of a learning route (#237) */
+  :root .skill .steps,:root .step::before{color:color-mix(in oklab,var(--tc) 38%,#fff)}
+  :root .step.done::before{background:color-mix(in oklab,var(--tc) 38%,#fff);border-color:color-mix(in oklab,var(--tc) 38%,#fff);color:var(--bg)}
 }
 
 /* rails (horizontal scrolling rows) */
@@ -366,7 +369,8 @@ p{margin:.45em 0}
 .skill .ico{color:var(--tc)} .skill .ico svg{width:28px;height:28px}
 .skill b{font:600 18.5px/1.22 var(--display)}
 .skill small{color:var(--ink2);font-size:15.5px;line-height:1.38}
-.skill .steps{margin-top:auto;font-size:14.5px;font-weight:750;color:var(--tc)}
+/* a guide colour used as small text is darkened, so every guide reads at 4.5:1 or more on its card (#237) */
+.skill .steps{margin-top:auto;font-size:14.5px;font-weight:750;color:color-mix(in oklab,var(--tc) 70%,#000)}
 .mini{display:flex;flex-direction:column;gap:4px;padding:14px;border-radius:var(--r);background:var(--paper);border:1px solid var(--line2);text-decoration:none;color:var(--ink);min-height:92px}
 .mini small{color:var(--ink2);font-size:14px}
 .mini b{font-size:15.5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -463,10 +467,10 @@ details.more>.body{padding:0 12px 14px}
 .related{display:flex;flex-wrap:wrap;gap:8px}
 .route{list-style:none;padding:0;margin:0;counter-reset:s}
 .step{position:relative;padding:0 0 24px 54px}
-.step::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:0;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--tc) 15%,var(--paper));color:var(--tc);font-weight:800;border:2px solid var(--tc)}
+.step::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:0;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--tc) 15%,var(--paper));color:color-mix(in oklab,var(--tc) 70%,#000);font-weight:800;border:2px solid var(--tc)}
 .step::after{content:"";position:absolute;left:18px;top:42px;bottom:4px;width:2px;background:var(--line)}
 .step:last-child::after{display:none}
-.step.done::before{background:var(--tc);color:#fff;content:"✓"}
+.step.done::before{background:color-mix(in oklab,var(--tc) 70%,#000);border-color:color-mix(in oklab,var(--tc) 70%,#000);color:#fff;content:"✓"}
 .step h3{padding-top:7px;font-size:18.5px}
 .step .goal{color:var(--ink2);margin:4px 0 10px}
 .mark{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:15px;color:var(--ink2)}
