@@ -21,6 +21,9 @@ The formulas, constants and how each number in the triage-based search proposal 
 | `lists/list1.jsonl` ... `list3.jsonl` | Three independent lists (690, 606, 531 messages), written by AI agents of one model family told not to open any project file, labelled red / yellow / green |
 | `lists/list4.jsonl` | A fourth list (832 messages, 525 in Spanish) from Qwen3.5-9B, run locally |
 | `score.py` | The scorer |
+| `stats.py` | 95% intervals for one run; paired before/after tests for two runs on the same questions (needs `--rows`) |
+| `index_identity.py` | Which passages a data folder's meaning index holds, as one SHA-256, to compare two builds |
+| `baseline-main.json`, `baseline-files.md` | The baseline on `main`, and every file it was measured with (pack, model, index, test sets) |
 
 Each list's first line is a header: who wrote it, its size and colour counts, and for which fixes it is no longer blind.
 The independent lists have no `need` patterns, so they measure urgency and pages shown, not which page comes first.
@@ -41,6 +44,26 @@ python -B tools/search_eval/score.py --mode hybrid --out hy.json
 - `--sets triage,lists` runs some sets only; `--rows` also writes every question's top 8; `--code <checkout>` measures another checkout.
 
 Nothing is written into the library folder. A full keyword run takes a few minutes, hybrid about half an hour.
+To check a rerun against the baseline, see [baseline-files.md](baseline-files.md#rerun-and-check).
+
+## Statistics
+
+```
+python -B tools/search_eval/stats.py kw.json                   # one run
+python -B tools/search_eval/stats.py before.json after.json    # a change, on the same questions
+```
+
+- **One run:** each yes/no measure as a count, a rate and its Wilson 95% interval; `useful_mean` with a percentile
+  bootstrap 95% interval (2,000 resamples of the questions, seed 1, so the output is the same every time).
+- **Two runs:** questions are paired by set and id. For a yes/no measure, how many went no → yes and yes → no, and the
+  exact McNemar p (two-sided, on those questions only). For `useful_mean`, the mean paired difference with a paired
+  bootstrap 95% interval.
+- **Reading it:** small groups give wide intervals (3 of 5 is 23–88%), so report them as counts. The p-values are not
+  corrected for the number of groups and measures. One measure is the main result, fixed before a change is measured:
+  red questions' `first_ok` for a ranking change, red recall for the urgency check. The rest are descriptive.
+- **Against a target:** a claim such as "undertriage under 5%" holds when the lower end of red recall's interval is at
+  or above 95%, not its rate alone. With Wilson's interval that needs at least 73 red lines with no miss, 110 with one
+  miss, 142 with two.
 
 ## What the measures mean
 

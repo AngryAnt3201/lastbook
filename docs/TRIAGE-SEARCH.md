@@ -493,10 +493,14 @@ for that. Each list file's first line repeats this.
 
 ## 11. How to reproduce
 
-**Data folder.** The runs read a local copy of upstream's Medium library pack (`pack.json`: `name` "medium", built 2026-11-12,
-`setup-pack.json`: `Lastbook-Medium.zip`; 3 ZIM files for the encyclopedias, 138,547 rows in `library-data/search.sqlite`), with its meaning
-index (337,016 passages) for hybrid runs. The scorer reads it and never writes it: it opens the meaning index read-only (immutable when no
-write-ahead log is pending), never truncates `vectors.f16`, refuses the sections build (from PR 2 on), and starts no indexer and no local model.
+**Data folder.** The runs read a data folder with the published Medium library pack (`Lastbook-Medium.zip`; `pack.json`:
+`name` "medium", built 2026-11-12; 3 ZIM files for the encyclopedias, 138,547 rows in `library-data/search.sqlite`), with
+bge-small-en-v1.5 in `derived/models/` and, for hybrid runs, a meaning index built from the pack. Section 14's baseline
+uses an index built by main's own indexer (338,910 passages); the measurements of sections 1-10 were made earlier on the
+author's fork, against its own index (337,016 passages). `tools/search_eval/baseline-files.md` identifies every file.
+The scorer reads the data folder and never writes it: it opens the meaning index read-only (immutable when no
+write-ahead log is pending), never truncates `vectors.f16`, refuses the sections build (from PR 2 on), and starts no
+indexer and no local model.
 
 **Commands** (from the repository root):
 
@@ -563,56 +567,75 @@ Not recorded or not determinable:
 
 ## 14. Baseline on `main`
 
-Recorded with `tools/search_eval/score.py` on `main` at 5e656fb (v1.1.15), against the data folder of section 11, and kept
-in `tools/search_eval/baseline-main.json`. Counts are questions unless the column says mean; "flagged urgent" is n/a because
-`main` has no urgency check for the library search. The keyword-only typo versions' 2.23 useful pages and the hybrid 3.39
-equal the "before" figures of sections 1 and 3, measured earlier on the fork's starting point.
+Recorded with `tools/search_eval/score.py` on `main` at f41b6ce, with the published Medium pack and a meaning index built
+from it by main's own indexer, and kept in `tools/search_eval/baseline-main.json`. Every file it was measured with (pack,
+model, index, test sets) is identified by SHA-256 in `tools/search_eval/baseline-files.md`, with the commands to rerun it.
 
-| Set | Mode | n | useful of 8 (mean) | first useful | any of top 3 | covered | no useful page | topic cap broken |
+**Statistical methods.** Each question is one observation. For a yes/no measure the table gives the count, the rate and
+its 95% confidence interval (Wilson score interval). For the mean number of useful pages of 8 it gives the mean and a 95%
+percentile bootstrap interval (2,000 resamples of the questions, fixed seed). Groups under 20 questions are given as
+counts only. A change is compared on the same questions (paired): for a yes/no measure, the exact McNemar test (two-sided
+binomial test on the questions that changed); for the mean, a paired bootstrap interval of the difference. P-values are
+not corrected for the number of groups and measures: for a ranking change the primary outcome, fixed beforehand, is red
+questions' first useful page, and the other measures are descriptive. All of this is `tools/search_eval/stats.py`.
+
+**Reproducibility.** Keyword results are deterministic: a rerun on main f41b6ce gave the same 8 pages for all 3,258
+questions as the first run on 5e656fb. Hybrid results depend on the meaning index, which each machine builds: a CPU and
+a GPU build of the same pack held the same passages and gave the same yes/no measures on all 3,258 questions (no
+change; the 95% upper bound on the share of changed results is 0.1%), with 66 questions (2%) showing some pages in
+another order between pages of nearly equal score. The baseline is the CPU build.
+
+**Correction.** An earlier version of this baseline (5e656fb, 2026-11-21) was measured against a meaning index built on
+the author's fork, whose page labels differ in 351 documents and which predates a change in how main splits video
+transcripts (337,016 passages instead of 338,910). Against main's own index, one yes/no measure of one question changed
+(glued urgent messages, any of top 3 useful: 3 → 4) and some useful-page means rose by up to 0.25; the conclusions are
+the same.
+
+| Set | Mode | n | useful of 8, mean (95% CI) | first page useful | any of top 3 useful | no useful page | covered | topic cap broken |
 |---|---|---|---|---|---|---|---|---|
-| Triage, red | keyword | 131 | 3.89 | 58 | 96 | 89 | 27 | 4 |
-| Triage, red | hybrid | 131 | 5.11 | 88 | 111 | 114 | 5 | 3 |
-| Triage, yellow | keyword | 56 | 5.05 | 39 | 46 | 49 | 6 | 0 |
-| Triage, yellow | hybrid | 56 | 5.86 | 42 | 51 | 54 | 1 | 0 |
-| Triage, green | keyword | 44 | 5.77 | 36 | 41 | 40 | 1 | 0 |
-| Triage, green | hybrid | 44 | 6.84 | 37 | 42 | 43 | 0 | 0 |
-| Triage, counterexamples | keyword | 22 | 4.91 | 14 | 18 | 19 | 2 | 0 |
-| Triage, counterexamples | hybrid | 22 | 5.73 | 17 | 20 | 22 | 0 | 0 |
-| Triage, typo versions | keyword | 109 | 2.23 | 30 | 47 | 42 | 54 | 3 |
-| Triage, typo versions | hybrid | 109 | 3.39 | 49 | 74 | 71 | 23 | 2 |
-| #128, clean | keyword | 27 | 4.44 | 16 | 23 | 23 | 3 | 0 |
-| #128, clean | hybrid | 27 | 5.93 | 24 | 26 | 27 | 0 | 0 |
-| #128, typos | keyword | 25 | 3.6 | 13 | 16 | 16 | 7 | 0 |
-| #128, typos | hybrid | 25 | 4.72 | 15 | 19 | 20 | 4 | 0 |
-| #154, clean | keyword | 32 | 4.47 | 20 | 27 | 27 | 3 | 2 |
-| #154, clean | hybrid | 32 | 5.47 | 20 | 29 | 27 | 3 | 1 |
-| #154, typos | keyword | 32 | 2.91 | 13 | 19 | 15 | 12 | 2 |
-| #154, typos | hybrid | 32 | 4.16 | 14 | 25 | 25 | 2 | 1 |
-| #241 | keyword | 21 | 4.81 | 12 | 20 | 19 | 0 | 1 |
-| #241 | hybrid | 21 | 5.71 | 14 | 21 | 20 | 0 | 0 |
-| Conversations (last message) | keyword | 52 | 3.23 | 22 | 27 | 30 | 18 | 1 |
-| Conversations (last message) | hybrid | 52 | 3.98 | 24 | 34 | 39 | 10 | 1 |
-|   corrections | keyword | 14 | 4.43 | 8 | 10 | 10 | 3 | 1 |
-|   corrections | hybrid | 14 | 5.07 | 9 | 10 | 13 | 1 | 1 |
-|   new emergency | keyword | 5 | 4.4 | 3 | 4 | 4 | 0 | 0 |
-|   new emergency | hybrid | 5 | 5.4 | 3 | 5 | 5 | 0 | 0 |
+| Triage, red | keyword | 131 | 3.89 (3.37–4.39) | 58 (44%; 36–53) | 96 (73%; 65–80) | 27 (21%; 15–28) | 89 | 4 |
+| Triage, red | hybrid | 131 | 5.13 (4.68–5.58) | 88 (67%; 59–75) | 111 (85%; 78–90) | 5 (4%; 2–9) | 114 | 3 |
+| Triage, yellow | keyword | 56 | 5.05 (4.30–5.79) | 39 (70%; 57–80) | 46 (82%; 70–90) | 6 (11%; 5–21) | 49 | 0 |
+| Triage, yellow | hybrid | 56 | 5.86 (5.25–6.41) | 42 (75%; 62–84) | 51 (91%; 81–96) | 1 (2%; 0–9) | 54 | 0 |
+| Triage, green | keyword | 44 | 5.77 (5.02–6.43) | 36 (82%; 68–90) | 41 (93%; 82–98) | 1 (2%; 0–12) | 40 | 0 |
+| Triage, green | hybrid | 44 | 6.84 (6.27–7.32) | 37 (84%; 71–92) | 42 (95%; 85–99) | 0 (0%; 0–8) | 43 | 0 |
+| Triage, counterexamples | keyword | 22 | 4.91 (3.64–6.18) | 14 (64%; 43–80) | 18 (82%; 61–93) | 2 (9%; 3–28) | 19 | 0 |
+| Triage, counterexamples | hybrid | 22 | 5.73 (4.73–6.64) | 17 (77%; 57–90) | 20 (91%; 72–97) | 0 (0%; 0–15) | 22 | 0 |
+| Triage, typo versions | keyword | 109 | 2.23 (1.69–2.78) | 30 (28%; 20–37) | 47 (43%; 34–52) | 54 (50%; 40–59) | 42 | 3 |
+| Triage, typo versions | hybrid | 109 | 3.44 (2.94–3.93) | 49 (45%; 36–54) | 74 (68%; 59–76) | 23 (21%; 14–30) | 71 | 2 |
+| #128, clean | keyword | 27 | 4.44 (3.30–5.52) | 16 (59%; 41–75) | 23 (85%; 68–94) | 3 (11%; 4–28) | 23 | 0 |
+| #128, clean | hybrid | 27 | 5.93 (5.15–6.67) | 24 (89%; 72–96) | 26 (96%; 82–99) | 0 (0%; 0–12) | 27 | 0 |
+| #128, typos | keyword | 25 | 3.60 (2.36–4.92) | 13 (52%; 33–70) | 16 (64%; 45–80) | 7 (28%; 14–48) | 16 | 0 |
+| #128, typos | hybrid | 25 | 4.72 (3.44–5.96) | 15 (60%; 41–77) | 19 (76%; 57–89) | 4 (16%; 6–35) | 20 | 0 |
+| #154, clean | keyword | 32 | 4.47 (3.41–5.44) | 20 (62%; 45–77) | 27 (84%; 68–93) | 3 (9%; 3–24) | 27 | 2 |
+| #154, clean | hybrid | 32 | 5.47 (4.56–6.22) | 20 (62%; 45–77) | 29 (91%; 76–97) | 3 (9%; 3–24) | 27 | 1 |
+| #154, typos | keyword | 32 | 2.91 (1.78–4.03) | 13 (41%; 26–58) | 19 (59%; 42–74) | 12 (38%; 23–55) | 15 | 2 |
+| #154, typos | hybrid | 32 | 4.16 (3.16–5.16) | 14 (44%; 28–61) | 25 (78%; 61–89) | 2 (6%; 2–20) | 25 | 1 |
+| #241 | keyword | 21 | 4.81 (3.81–5.76) | 12 (57%; 37–76) | 20 (95%; 77–99) | 0 (0%; 0–15) | 19 | 1 |
+| #241 | hybrid | 21 | 5.81 (5.38–6.29) | 14 (67%; 45–83) | 21 (100%; 85–100) | 0 (0%; 0–15) | 20 | 0 |
+| Conversations (last message) | keyword | 52 | 3.23 (2.35–4.17) | 22 (42%; 30–56) | 27 (52%; 39–65) | 18 (35%; 23–48) | 30 | 1 |
+| Conversations (last message) | hybrid | 52 | 4.00 (3.12–4.83) | 24 (46%; 33–59) | 34 (65%; 52–77) | 10 (19%; 11–32) | 39 | 1 |
+|   corrections | keyword | 14 | 4.43 (2.64–6.14) | 8 | 10 | 3 | 10 | 1 |
+|   corrections | hybrid | 14 | 5.14 (3.57–6.57) | 9 | 10 | 1 | 13 | 1 |
+|   new emergency | keyword | 5 | 4.40 (2.20–6.60) | 3 | 4 | 0 | 4 | 0 |
+|   new emergency | hybrid | 5 | 5.40 (3.20–7.60) | 3 | 5 | 0 | 5 | 0 |
 
-#154's own useful count (keyword): 141 of 256 clean, 101 of 256 typos. 
-#154's own useful count (hybrid): 177 of 256 clean, 143 of 256 typos. 
+#154's own useful count (keyword): 141 of 256 clean, 101 of 256 typos.  
+#154's own useful count (hybrid): 177 of 256 clean, 143 of 256 typos.  
 
-| List | Mode | red: pages shown | red: no pages | yellow: pages shown | green: pages shown | flagged urgent |
-|---|---|---|---|---|---|---|
-| 1 | keyword | 318/343 | 25 | 102/104 | 242/243 | n/a |
-| 1 | hybrid | 343/343 | 0 | 104/104 | 243/243 | n/a |
-| 2 | keyword | 238/249 | 11 | 111/111 | 245/246 | n/a |
-| 2 | hybrid | 249/249 | 0 | 111/111 | 246/246 | n/a |
-| 3 | keyword | 194/199 | 5 | 78/78 | 254/254 | n/a |
-| 3 | hybrid | 199/199 | 0 | 78/78 | 254/254 | n/a |
-| 4 | keyword | 115/115 | 0 | 153/153 | 564/564 | n/a |
-| 4 | hybrid | 115/115 | 0 | 153/153 | 564/564 | n/a |
+| List | Mode | red: pages shown | red: no pages | yellow: pages shown | green: pages shown |
+|---|---|---|---|---|---|
+| 1 | keyword | 318 (93%; 89–95) of 343 | 25 | 102/104 | 242/243 |
+| 1 | hybrid | 343 (100%; 99–100) of 343 | 0 | 104/104 | 243/243 |
+| 2 | keyword | 238 (96%; 92–98) of 249 | 11 | 111/111 | 245/246 |
+| 2 | hybrid | 249 (100%; 98–100) of 249 | 0 | 111/111 | 246/246 |
+| 3 | keyword | 194 (97%; 94–99) of 199 | 5 | 78/78 | 254/254 |
+| 3 | hybrid | 199 (100%; 98–100) of 199 | 0 | 78/78 | 254/254 |
+| 4 | keyword | 115 (100%; 97–100) of 115 | 0 | 153/153 | 564/564 |
+| 4 | hybrid | 115 (100%; 97–100) of 115 | 0 | 153/153 | 564/564 |
 
-Glued emergencies (keyword): first useful 0 of 18, no result at all 18. 
-Glued emergencies (hybrid): first useful 1 of 18, no result at all 0.
+Glued emergencies (keyword): first page useful 0 of 18, no result at all 18.  
+Glued emergencies (hybrid): first page useful 1 of 18, no result at all 0.  
 
 ## Sources
 

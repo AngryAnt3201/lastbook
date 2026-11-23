@@ -1,7 +1,12 @@
 {
- "note": "Baseline of tools/search_eval/score.py on upstream main, read-only, no local AI. Counts of questions unless the key says mean. Data: a copy of the Medium library pack (built 2026-11-12) with its meaning index.",
- "code": "main 5e656fb (v1.1.15); the search code (server.py, assistant.py, retrieval.py, engine/) is unchanged up to 9645686",
- "date": "2026-11-21",
+ "note": "Baseline of tools/search_eval/score.py on upstream main, read-only, no local AI. Counts of questions unless the key says mean. Data: the published Medium library pack and a meaning index built from it with main's own indexer; every file is identified in baseline-files.md. Per-question results: rerun with --rows.",
+ "code": "main f41b6ce with this branch's tools/search_eval (score.py identical to the one in this commit)",
+ "data": {
+  "pack": "Lastbook-Medium.zip, 67,492,034,038 bytes, SHA-256 e4ef75afd584dd174bfb34468a41a9c7c5e6907d5b37bb722aa9b5435876068a",
+  "keyword_index": "library-data/search.sqlite SHA-256 198c2af919c7ffee13e95cabd66d7a831c93077bf443dcc35a2892cb0eeefffe",
+  "meaning_index": "built by python retrieval.py on main f41b6ce, CPU; 338,910 passages, 7,849 documents, text_sha256 938e417e3d0d173e95e96ead7db5fb31afdf904057b1fc5179ba041cf996037a (index_identity.py)"
+ },
+ "date": "2026-11-22",
  "runs": {
   "keyword": {
    "mode": "keyword",
@@ -538,20 +543,20 @@
      }
     }
    },
-   "seconds": 255.7
+   "seconds": 643.8
   },
   "hybrid": {
    "mode": "hybrid",
    "search": "hybrid",
    "semantic": {
     "state": "loaded",
-    "chunks": 337016
+    "chunks": 338910
    },
    "urgency_check": false,
    "triage": {
     "all_clean": {
      "n": 253,
-     "useful_mean": 5.63,
+     "useful_mean": 5.64,
      "first_ok": 184,
      "top3_ok": 224,
      "covered": 233,
@@ -571,7 +576,7 @@
     },
     "typos": {
      "n": 109,
-     "useful_mean": 3.39,
+     "useful_mean": 3.44,
      "first_ok": 49,
      "top3_ok": 74,
      "covered": 71,
@@ -581,7 +586,7 @@
     },
     "red": {
      "n": 131,
-     "useful_mean": 5.11,
+     "useful_mean": 5.13,
      "first_ok": 88,
      "top3_ok": 111,
      "covered": 114,
@@ -739,7 +744,7 @@
    "issue241": {
     "all": {
      "n": 21,
-     "useful_mean": 5.71,
+     "useful_mean": 5.81,
      "first_ok": 14,
      "top3_ok": 21,
      "covered": 20,
@@ -759,7 +764,7 @@
     },
     "counter": {
      "n": 12,
-     "useful_mean": 5.83,
+     "useful_mean": 6.0,
      "first_ok": 9,
      "top3_ok": 12,
      "covered": 12,
@@ -789,7 +794,7 @@
      "n": 18,
      "with_need": 18,
      "first_ok": 1,
-     "top3_ok": 3,
+     "top3_ok": 4,
      "zero_useful": 12,
      "no_hits": 0
     },
@@ -821,7 +826,7 @@
    "conversations": {
     "all": {
      "n": 52,
-     "useful_mean": 3.98,
+     "useful_mean": 4.0,
      "first_ok": 24,
      "top3_ok": 34,
      "covered": 39,
@@ -862,7 +867,7 @@
     },
     "correct": {
      "n": 14,
-     "useful_mean": 5.07,
+     "useful_mean": 5.14,
      "first_ok": 9,
      "top3_ok": 10,
      "covered": 13,
@@ -1075,7 +1080,7 @@
      }
     }
    },
-   "seconds": 1589.9
+   "seconds": 1314.6
   }
  }
 }
