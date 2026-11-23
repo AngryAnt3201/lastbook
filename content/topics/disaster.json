@@ -140,7 +140,7 @@
   {
    "id": "wildfire",
    "label": "A wildfire is near — evacuate or trapped",
-   "hint": "Evacuation order, forest fires approaching, trapped at home or in a car",
+   "hint": "Evacuation order, packing up, forest fires approaching, trapped at home or in a car",
    "read": [
     {
      "doc": "2848f4bffb8109",
