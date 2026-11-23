@@ -4,7 +4,7 @@
   PYTHONDONTWRITEBYTECODE=1 <venv python> -B app/tests/test_bridge.py [-v]
 
 Uses the made-up library in derived/app-build/testdata (no model) and a stub for chat. Never packaged."""
-import faulthandler, hashlib, json, os, shutil, socket, statistics, subprocess, sys, threading, time, types, unittest
+import faulthandler, hashlib, io, json, os, shutil, socket, statistics, subprocess, sys, tempfile, threading, time, types, unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -241,6 +241,12 @@ class Both:
         self.assertEqual(call(b, 'HEAD', route, key).body, b'')
         self.assertEqual(json.loads(file.read_bytes()), {'language': 'es-419'})
         self.assertEqual(call(self.b, 'GET', route, self.key).status, 404)
+
+    def test_simplified_chinese_can_be_saved(self):
+        file, b, key = self.language_bridge()
+        self.assertEqual(call(b, 'POST', B.ui_language.ROUTE, key, b'{"language":"zh-Hans"}').status, 200)
+        self.assertEqual(json.loads(file.read_bytes()), {'language': 'zh-Hans'})
+        self.assertEqual(json.loads(call(b, 'GET', B.ui_language.ROUTE, key).body), {'language': 'zh-Hans'})
 
     def test_german_can_be_saved(self):
         file, b, key = self.language_bridge()
@@ -1008,13 +1014,81 @@ class AssistantStaysHere(unittest.TestCase):
                 assistant.model_open(bad, 1)
         with self.assertRaises(urllib.error.URLError):
             assistant.model_open(urllib.request.Request('http://example.org:80/v1/chat/completions', b'{}'), 1)
-        kinds = {type(h).__name__ for h in assistant._opener.handlers}
-        self.assertNotIn('ProxyHandler', {k for k in kinds if getattr(next(h for h in assistant._opener.handlers if type(h).__name__ == k), 'proxies', None)})
+        from engine import model_server     # where assistant.model_open lives
+        kinds = {type(h).__name__ for h in model_server._opener.handlers}
+        self.assertNotIn('ProxyHandler', {k for k in kinds if getattr(next(h for h in model_server._opener.handlers if type(h).__name__ == k), 'proxies', None)})
         self.assertIn('_NoRedirect', kinds)
         self.assertNotIn('HTTPRedirectHandler', kinds)
-        self.assertIsNone(assistant._NoRedirect().redirect_request(None, None, 302, 'Found', {}, 'https://example.org/'))
+        self.assertIsNone(model_server._NoRedirect().redirect_request(None, None, 302, 'Found', {}, 'https://example.org/'))
         self.assertEqual(assistant.MODEL_URL, 'http://127.0.0.1:9/v1/chat/completions')
 
+
+
+class AssistantChosenServer(unittest.TestCase):
+    """#78: a model server chosen in Setup answers instead of Lastbook's own local AI, text only; choosing none goes back.
+    REAL_STATUS and REAL_CHAT: the module below puts stubs in their place for the HTTP tests."""
+    def setUp(self):
+        self.local = mock.Mock()
+        self.local.available.return_value = True
+        self.local.status.return_value = {'name': 'Lastbook AI', 'state': 'stopped'}
+        p = patch.object(assistant, 'LOCAL', self.local)
+        p.start()
+        self.addCleanup(p.stop)
+        self.addCleanup(assistant.use_server, None, None)
+
+    def test_bundled_model_answers_when_nothing_is_chosen(self):
+        self.assertTrue(assistant.local_on())
+        st = REAL_STATUS()
+        self.assertEqual((st['model'], st['online'], st['local']['name']), ('Lastbook AI', True, 'Lastbook AI'))
+        self.assertNotIn('server', st)
+
+    def test_chosen_server_answers_and_back(self):
+        listed = []
+
+        def models(url, timeout):
+            listed.append(url)
+            return io.BytesIO(b'{"data":[{"id":"small-9b"}]}')
+        assistant.use_server('http://127.0.0.1:11434', 'small-9b')
+        self.assertFalse(assistant.local_on())
+        self.local.stop.assert_called_once()
+        self.assertEqual((assistant.MODEL_URL, assistant.MODEL), ('http://127.0.0.1:11434/v1/chat/completions', 'small-9b'))
+        with patch.object(assistant, 'model_open', side_effect=models):
+            st = REAL_STATUS()
+        self.assertEqual(listed, ['http://127.0.0.1:11434/v1/models'])
+        self.assertEqual((st['model'], st['online'], st['local'], st['vision'], st['server']),
+                         ('small-9b', True, None, False, {'address': '127.0.0.1:11434', 'model': 'small-9b'}))
+
+        assistant.use_server(None, None)
+        self.assertTrue(assistant.local_on())
+        self.assertEqual((assistant.MODEL_URL, assistant.MODEL), ('http://127.0.0.1:9/v1/chat/completions', assistant.STARTED_WITH[1]))
+
+    def test_an_unavailable_chosen_server_is_offline(self):
+        assistant.use_server('http://127.0.0.1:11434', 'small-9b')
+        with patch.object(assistant, 'model_open', side_effect=ConnectionRefusedError()):
+            st = REAL_STATUS()
+        self.assertEqual((st['online'], st['error'], st['server']['address']), (False, 'ConnectionRefusedError', '127.0.0.1:11434'))
+
+    def test_never_off_this_computer(self):
+        for bad in ('http://10.0.0.5:8080', 'http://example.org:80'):
+            with self.assertRaises(ValueError):
+                assistant.use_server(bad, 'm')
+        self.assertFalse(assistant.CHOSEN)
+        self.assertEqual(assistant.MODEL_URL, 'http://127.0.0.1:9/v1/chat/completions')
+
+    def test_chosen_server_gets_text_tools_only(self):
+        seen = []
+
+        def one_round(msgs, tools, cancelled, wrote, set_state):
+            seen.append(([t['function']['name'] for t in tools or []], msgs[0]['content']))
+            return ('Answer.', {})
+        assistant.use_server('http://127.0.0.1:11434', 'small-9b')
+        with patch.object(assistant, '_http_round', side_effect=one_round), patch.object(assistant, 'context_for', return_value=None):
+            REAL_CHAT([{'role': 'user', 'content': 'x'}], 'about', lambda ev: None, lambda: False)
+        names, system = seen[0]
+        self.assertIn('search_library', names)
+        self.assertNotIn('view_page', names)
+        self.assertEqual(system, assistant.SYSTEM_TEXT_ONLY)
+        self.local.ensure_running.assert_not_called()
 
 class AssistantHTTPMessages(unittest.TestCase):
     def round(self, messages, tools=None):
@@ -1074,6 +1148,54 @@ class AssistantHTTPMessages(unittest.TestCase):
         body = self.round(messages)
         self.assertEqual(body['messages'], messages)
         self.assertNotIn('tools', body)
+
+
+class ServerMode(unittest.TestCase):
+    """server.py run on its own (--lan, the library server): the map asks for 20 or more tiles at once."""
+
+    def listen_queue(self, server_class, handler):
+        srv = server_class(('127.0.0.1', 0), handler, bind_and_activate=False)
+        try:
+            with mock.patch.object(socket.socket, 'listen') as listen:   # never really listens: WholeProcess checks that
+                srv.server_bind()
+                srv.server_activate()
+            return listen.call_args.args[0]
+        finally:
+            srv.server_close()
+
+    def test_listen_queue_holds_a_burst_of_tiles(self):
+        # Python's default queue is 5: on macOS the waiting connections beyond it were reset, and those tiles stayed blank.
+        self.assertGreaterEqual(self.listen_queue(server.HTTPServer, server.Handler), 64)
+
+    def test_library_server_has_the_same_queue(self):
+        # engine/library.py serve: the plain library server, without server.py on top.
+        library = server.library
+        self.assertGreaterEqual(self.listen_queue(library.HTTPServer, library.Handler), 64)
+
+
+class CatalogWrite(unittest.TestCase):
+    """engine/library.py writes catalog.json when it builds; the app recognises a library by that file (app/main.py check)."""
+
+    def test_cut_short_keeps_the_old_catalog(self):
+        library = server.library
+        root = Path(tempfile.mkdtemp(prefix='lastbook-catalog-'))
+        self.addCleanup(shutil.rmtree, root)
+        (root / 'manifests').mkdir()
+        (root / 'docs').mkdir()
+        (root / 'docs' / 'a.pdf').write_bytes(b'%PDF-1.4')
+        (root / 'manifests' / 'docs.json').write_text(json.dumps([{'path': 'docs/a.pdf', 'title': 'A'}]), encoding='utf-8')
+        old = '[{"path": "docs/a.pdf", "title": "A"}]'
+        (root / 'catalog.json').write_text(old, encoding='utf-8')
+        real_write = Path.write_text
+
+        def half_then_fail(path, text, *args, **kwargs):   # a full disk, or the build stopped mid-write
+            real_write(path, text[:len(text) // 2], *args, **kwargs)
+            raise OSError('No space left on device')
+
+        with mock.patch.object(library, 'ROOT', root), mock.patch.object(Path, 'write_text', half_then_fail):
+            with self.assertRaises(OSError):
+                library.catalog()
+        self.assertEqual((root / 'catalog.json').read_text(encoding='utf-8'), old)
 
 
 class NothingGoesOut(unittest.TestCase):
