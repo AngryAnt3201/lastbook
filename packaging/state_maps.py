@@ -54,11 +54,16 @@ STORED = {'derived/geo/terrain.sqlite'}     # tiles are already compressed
 sys.path.insert(0, str(ROOT / 'packaging'))
 sys.path.insert(0, str(ROOT / 'derived/release'))
 import scan_pack as S       # noqa: E402
-import r2_publish as R      # noqa: E402
 
 
 def log(*a):
     print(time.strftime('%H:%M:%S'), *a, flush=True)
+
+
+def _r2():
+    """The bucket client, imported only when publishing: a read-only dry run needs no credentials or release files."""
+    import r2_publish
+    return r2_publish
 
 
 def states():
@@ -263,6 +268,7 @@ def make_zip(d, out):
 
 def upload(ctx, path, key):
     """r2_publish.upload_file, with a key under maps/."""
+    R = _r2()
     size = path.stat().st_size
     ctype = 'application/zip'
     if size <= R.MULTIPART_OVER:
@@ -313,6 +319,7 @@ def public_sha(url):
 
 
 def list_in_manifest(ctx, entry):
+    R = _r2()
     m = json.loads(MANIFEST.read_text())
     packs, models = json.dumps(m['packs']), json.dumps(m.get('models'))
     maps = [x for x in m.get('maps', []) if x['id'] != entry['id']] + [entry]
@@ -400,14 +407,52 @@ def one_state(ctx, code, res):
         shutil.rmtree(d)
 
 
+DRY_RUN_USAGE = 'usage: state_maps.py --dry-run [eu-xx ...] [--set DIR]'
+
+
+def dry_run_args(args):
+    """Parse --dry-run's arguments: country codes plus at most one --set DIR, wherever it appears. A repeated or
+    incomplete --set, or an unknown option, is refused with the usage rather than read as a country code."""
+    codes, where, i = [], None, 0
+    while i < len(args):
+        arg = args[i]
+        if arg == '--set' or arg.startswith('--set='):
+            if where is not None:
+                raise ValueError('--set may be given only once; ' + DRY_RUN_USAGE)
+            if arg == '--set':
+                if i + 1 == len(args) or not args[i + 1] or args[i + 1].startswith('-'):
+                    raise ValueError('--set needs a folder; ' + DRY_RUN_USAGE)
+                where = args[i + 1]
+                i += 2
+            else:
+                where = arg.split('=', 1)[1]
+                if not where:
+                    raise ValueError('--set needs a folder; ' + DRY_RUN_USAGE)
+                i += 1
+        elif arg.startswith('-'):
+            raise ValueError(f'unknown option {arg!r}; ' + DRY_RUN_USAGE)
+        elif not arg:
+            raise ValueError('empty country code; ' + DRY_RUN_USAGE)
+        else:
+            codes.append(arg)
+            i += 1
+    return codes, where
+
+
 def dry_run(codes, where=None):
-    """Report each country's real coverage and its publish blockers. Reads the built set only: no zip, no upload,
+    """Report each country's real coverage and its publish blockers. Codes are checked before any coverage query, so
+    a state such as RI gets a clear blocker instead of a lookup failure. Reads the built set only: no zip, no upload,
     no manifest, no bucket credentials. Exits 1 if any code would not be published."""
-    ok = True
+    codes = list(codes)
+    unknown = {code for code in codes if code not in COUNTRIES}
+    ok = not unknown
     for code in codes:
         d = Path(where) if where else MAPS / code
-        counts = coverage_counts(d, code)
-        blockers = country_publish_blockers(d, code) if code in COUNTRIES else [f'{code} is not a country code']
+        if code in unknown:
+            counts, blockers = {}, [f'{code} is not a country code']
+        else:
+            counts = coverage_counts(d, code)
+            blockers = country_publish_blockers(d, code)
         print(json.dumps({'region': code, 'set': str(d), 'coverage': counts, 'publish_blockers': blockers}, ensure_ascii=False, sort_keys=True))
         ok = ok and not blockers
     return 0 if ok else 1
@@ -416,12 +461,15 @@ def dry_run(codes, where=None):
 def main():
     args = sys.argv[1:]
     if args[:1] == ['--dry-run']:
-        rest = args[1:]
-        where = None
-        if rest[:1] == ['--set']:
-            where, rest = rest[1], rest[2:]
-        sys.exit(dry_run(rest or sorted(PUBLISHED_COUNTRIES, key=lambda c: COUNTRIES[c]), where))
-    ctx = R.Context()
+        try:
+            codes, where = dry_run_args(args[1:])
+            if where is not None and not Path(where).is_dir():
+                raise ValueError(f'--set folder not found: {where}; ' + DRY_RUN_USAGE)
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            sys.exit(2)
+        sys.exit(dry_run(codes or sorted(PUBLISHED_COUNTRIES, key=lambda c: COUNTRIES[c]), where))
+    ctx = _r2().Context()
     if args[:1] == ['--worker']:
         """Take the next unclaimed region in release order until none is left. A failed region is written down and left claimed, for a person to look at."""
         name = args[1]

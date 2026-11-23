@@ -6,12 +6,17 @@ The build side is exercised with small SQLite files: one base-only set (what a U
 European country) and one with a row in every detailed layer, placed inside the country's box. No network, no derived
 source, nothing written outside the temporary folder.
 """
+import hashlib
 import importlib.util
+import io
+import json
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import types
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -90,6 +95,30 @@ def make_set(root, detailed):
              [('INSERT INTO resource VALUES(?, ?, ?)', (5, lon, lat))])
         make('places.sqlite', ['CREATE TABLE IF NOT EXISTS place(id INTEGER PRIMARY KEY, source TEXT, lon REAL, lat REAL)'],
              [('INSERT INTO place VALUES(?, ?, ?, ?)', (6, 'OpenStreetMap', lon, lat))])
+
+
+def tree_state(root):
+    """Every path under root with its contents' hash, so a test can prove a dry run wrote nothing."""
+    root = Path(root)
+    state = {}
+    for p in sorted(root.rglob('*')):
+        state[p.relative_to(root).as_posix()] = (
+            p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None)
+    return state
+
+
+def artifact_state():
+    """The files publishing would write, if they happen to exist in this checkout."""
+    state = {}
+    for name in ('ZIPS', 'RESULTS', 'TABLE', 'MANIFEST'):
+        p = getattr(SM, name)
+        if p.is_dir():
+            state[name] = ('dir', tree_state(p))
+        elif p.exists():
+            state[name] = ('file', p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest())
+        else:
+            state[name] = None
+    return state
 
 
 class CountryPublishing(unittest.TestCase):
@@ -173,6 +202,92 @@ class CountryPublishing(unittest.TestCase):
         self.assertEqual(SM.regions(), ['CA'])
         SM.PUBLISHED_COUNTRIES = {CODE: {}}
         self.assertEqual(SM.regions(), ['CA', CODE])
+
+    def test_publication_allowlist_stays_empty(self):
+        self.assertEqual(json.loads((HERE / 'country-publication.json').read_text(encoding='utf-8'))['countries'], {})
+
+
+class DryRun(unittest.TestCase):
+    def _cli(self, args):
+        old = sys.argv
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            sys.argv = ['state_maps.py'] + args
+            with redirect_stdout(out), redirect_stderr(err), self.assertRaises(SystemExit) as caught:
+                SM.main()
+        finally:
+            sys.argv = old
+        return caught.exception.code, out.getvalue(), err.getvalue()
+
+    def test_ri_is_rejected_before_any_coverage_query(self):
+        old = SM.coverage_counts
+        SM.coverage_counts = lambda *a, **k: self.fail('coverage was counted for a non-country code')
+        try:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = SM.dry_run(['RI'])
+        finally:
+            SM.coverage_counts = old
+        self.assertEqual(rc, 1)
+        record = json.loads(out.getvalue())
+        self.assertEqual(record['region'], 'RI')
+        self.assertEqual(record['coverage'], {})
+        self.assertEqual(record['publish_blockers'], ['RI is not a country code'])
+
+    def test_documented_cli_reads_set_folder_after_code_without_artifacts(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_set(d, detailed=True)
+            fixture, artifacts = tree_state(d), artifact_state()
+            p = subprocess.run([sys.executable, '-I', '-B', str(HERE / 'state_maps.py'), '--dry-run', CODE, '--set', d],
+                               cwd=HERE.parent, capture_output=True, text=True)
+            self.assertEqual(p.returncode, 1, p.stderr)
+            self.assertNotIn('Traceback', p.stderr)
+            record = json.loads(p.stdout)
+            self.assertEqual(record['region'], CODE)
+            self.assertEqual(record['set'], str(Path(d)))
+            self.assertTrue(all(record['coverage'].values()))
+            self.assertTrue(record['publish_blockers'])          # the allowlist is still empty
+            self.assertEqual(tree_state(d), fixture)
+            self.assertEqual(artifact_state(), artifacts)
+
+    def test_set_may_come_before_the_code_or_with_an_equals_sign(self):
+        self.assertEqual(SM.dry_run_args(['--set', 'one', CODE]), ([CODE], 'one'))
+        self.assertEqual(SM.dry_run_args([CODE, '--set=one']), ([CODE], 'one'))
+        self.assertEqual(SM.dry_run_args([CODE]), ([CODE], None))
+
+    def test_cli_rejects_a_repeated_set_with_usage(self):
+        old = SM.coverage_counts
+        SM.coverage_counts = lambda *a, **k: self.fail('a parse error must not count coverage')
+        try:
+            code, out, err = self._cli(['--dry-run', CODE, '--set', 'one', '--set', 'two'])
+        finally:
+            SM.coverage_counts = old
+        self.assertEqual(code, 2)
+        self.assertEqual(out, '')
+        self.assertIn('--set may be given only once', err)
+        self.assertIn('usage:', err)
+
+    def test_cli_rejects_a_set_without_a_folder_with_usage(self):
+        code, out, err = self._cli(['--dry-run', '--set'])
+        self.assertEqual(code, 2)
+        self.assertEqual(out, '')
+        self.assertIn('--set needs a folder', err)
+        self.assertIn('usage:', err)
+
+    def test_cli_rejects_a_missing_folder_with_usage(self):
+        with tempfile.TemporaryDirectory() as d:
+            code, out, err = self._cli(['--dry-run', CODE, '--set', str(Path(d) / 'missing')])
+        self.assertEqual(code, 2)
+        self.assertEqual(out, '')
+        self.assertIn('--set folder not found', err)
+        self.assertIn('usage:', err)
+
+    def test_cli_rejects_an_unknown_option_with_usage(self):
+        code, out, err = self._cli(['--dry-run', CODE, '--bogus'])
+        self.assertEqual(code, 2)
+        self.assertEqual(out, '')
+        self.assertIn('unknown option', err)
+        self.assertIn('usage:', err)
 
 
 if __name__ == '__main__':
