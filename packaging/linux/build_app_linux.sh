@@ -22,7 +22,7 @@
 set -euo pipefail
 HERE="$(dirname "$(realpath "$0")")"
 ROOT="$(dirname "$(dirname "$HERE")")"
-APP_VERSION="${LASTBOOK_VERSION:-1.1.15}"
+APP_VERSION="${LASTBOOK_VERSION:-1.1.16}"
 BUILD="$ROOT/derived/app-build/linux"
 OUT="$BUILD/$(date +%Y%m%d-%H%M%S)"
 STAGE="$OUT/root"

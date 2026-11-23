@@ -305,6 +305,30 @@ class fast_backoff:
 
 
 # ----------------------------------------------------------------------------------------------------------- tests --
+class ReleaseManifest(unittest.TestCase):
+    def test_rejects_invalid_generated_part_before_replacing_manifest(self):
+        from app.tests.multipart_fixture import write_fixture
+        from tempfile import TemporaryDirectory
+
+        spec = importlib.util.spec_from_file_location('release_manifest', ROOT / 'packaging/release_manifest.py')
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        with TemporaryDirectory() as tmp:
+            folder = Path(tmp) / 'fixture'
+            write_fixture(folder)
+            output = folder / 'single.json'
+            original = output.read_bytes()
+            parts = folder / 'generated'
+            args = ['release_manifest', '--packs', str(output), '--out', str(output), '--part-bytes', '128',
+                    '--split-pack', str(folder / 'Lastbook-Small.zip'), '--parts-dir', str(parts)]
+            # The input ZIP is pinned to the correct host. Only the generated part URLs are invalid.
+            with mock.patch.object(builder, 'BASE', 'https://example.invalid'), mock.patch.object(sys, 'argv', args):
+                with self.assertRaisesRegex(SystemExit, 'parts'):
+                    builder.main()
+            self.assertEqual(output.read_bytes(), original)
+            self.assertFalse(parts.exists())
+
+
 class Allowlist(unittest.TestCase):
     def test_product_hosts(self):
         ok = ['https://downloads.lastbook.org/1.0.0/Lastbook-Small.zip',
@@ -495,7 +519,71 @@ class Downloads(Base):
         self.files.etag['model.gguf'] = '"new"'
         d.run()
         self.assertEqual(Path(d.dest).read_bytes(), self.model)
-        self.assertEqual([r for _, r, _ in self.files.log], ['bytes=600000-', None])   # tried to resume, then started over
+        self.assertEqual([r for _, r, _ in self.files.log], ['bytes=600000-', 'bytes=0-599999', None])   # tried to resume, compared what was here, then started over
+
+    def stale(self, d, data, n, etag='"old"'):
+        """Leaves the first n bytes of `data` as d's partial file, saved under an ETag the server no longer gives."""
+        os.makedirs(os.path.dirname(d.part), exist_ok=True)
+        Path(d.part).write_bytes(data[:n])
+        Path(d.meta).write_text(json.dumps({'url': d.url, 'size': d.size, 'sha256': d.sha256, 'etag': etag, 'bytes_done': n}))
+
+    def test_etag_changed_same_bytes_keeps_the_part(self):
+        """The server's copy got a new ETag (uploaded again, say) but holds the same bytes: what is here is kept (#208)."""
+        d = self.dl('model.gguf')
+        self.stale(d, self.model, 600_000)
+        self.files.etag['model.gguf'] = '"new"'
+        seen = []
+        d.progress = lambda done, total, phase: phase == 'downloading' and seen.append(done)
+        d.run()
+        self.assertEqual(Path(d.dest).read_bytes(), self.model)
+        log = [r for _, r, _ in self.files.log]
+        self.assertEqual(log[0], 'bytes=600000-')
+        self.assertNotIn(None, log)                                   # never asked for the whole file
+        self.assertTrue(all(int(r[6:].split('-')[1]) < 600_000 for r in log[1:]), log)   # the rest: samples of what was here
+        self.assertEqual(min(seen), 600_000)                          # and the count never went back
+
+    def test_etag_changed_sample_differs_starts_over(self):
+        """One byte of what is here is not the server's: that is another file, and it starts over as before."""
+        d = self.dl('model.gguf')
+        self.stale(d, self.model[:599_999] + bytes([self.model[599_999] ^ 1]), 600_000)
+        self.files.etag['model.gguf'] = '"new"'
+        d.run()
+        self.assertEqual(Path(d.dest).read_bytes(), self.model)
+        self.assertEqual([r for _, r, _ in self.files.log][-1], None)
+
+    def test_etag_changed_between_the_samples_is_left_to_the_checksum(self):
+        """The comparison looks at stretches, not at every byte. A difference between them is found by the SHA-256 at the end, as
+        for any download that came out wrong."""
+        d = self.dl('model.gguf')
+        self.stale(d, self.model[:150_000] + bytes([self.model[150_000] ^ 1]) + self.model[150_001:], 600_000)
+        self.files.etag['model.gguf'] = '"new"'
+        with mock.patch.object(download, 'SAMPLE', 1000), self.assertRaises(download.BadChecksum):
+            d.run()
+        self.assertEqual([r for _, r, _ in self.files.log], ['bytes=600000-', 'bytes=0-999', 'bytes=299500-300499', 'bytes=599000-599999'])
+        self.assertFalse(Path(d.part).exists() or Path(d.dest).exists())
+
+    def test_etag_changed_and_the_check_breaks_keeps_the_part(self):
+        """A busy answer and a cut connection during the comparison are waited out like any other: nothing is thrown away."""
+        d = self.dl('model.gguf')
+        self.stale(d, self.model, 600_000)
+        self.files.etag['model.gguf'] = '"new"'
+        self.files.answers['model.gguf'] = [None, (503, None)]        # the resume is answered, the first sample is not
+        with fast_backoff():
+            d.run()
+        self.assertEqual(Path(d.dest).read_bytes(), self.model)
+        self.assertNotIn(None, [r for _, r, _ in self.files.log])
+
+    def test_etag_changed_and_the_check_gets_the_whole_file_keeps_the_part(self):
+        """A 200 to a sample tells nothing about what is here. It gives up as a network failure with the partial file kept."""
+        d = self.dl('model.gguf')
+        self.stale(d, self.model, 600_000)
+        self.files.etag['model.gguf'] = '"new"'
+        self.files.answers['model.gguf'] = [None, 'whole'] * download.NETWORK_TRIES     # each resume is answered, each sample is not
+        with fast_backoff(), self.assertRaises(download.Failed) as e:
+            d.run()
+        self.assertEqual(e.exception.code, 'network')
+        self.assertEqual(os.path.getsize(d.part), 600_000)
+        self.assertEqual(json.loads(Path(d.meta).read_text())['etag'], '"old"')   # so the next try checks again
 
     def test_server_ignores_range(self):
         """A 200 with the whole file to a resume (seen on downloads.lastbook.org for minutes after an upload): after one more ask,
@@ -798,6 +886,42 @@ class ParallelDownloads(Base):
         with pieces():
             self.assertEqual(Path(d.run()).read_bytes(), self.big)
         self.assertIn('bytes=0-262143', self.ranges())
+
+    def test_etag_changed_same_bytes_keeps_the_part(self):
+        """The same over several connections: the hashed run is kept, and the pieces carry on from it (#208)."""
+        d = self.dl()
+        os.makedirs(os.path.dirname(d.part), exist_ok=True)
+        Path(d.part).write_bytes(self.big[:512 * 1024] + b'\0' * (300 * 1024))     # and a window past it, not vouched for
+        Path(d.meta).write_text(json.dumps({'url': d.url, 'size': d.size, 'sha256': d.sha256, 'etag': '"old"', 'bytes_done': 512 * 1024, 'parallel': True}))
+        self.files.etag['big.bin'] = '"new"'
+        with pieces():
+            self.assertEqual(Path(d.run()).read_bytes(), self.big)
+        r = self.ranges()
+        self.assertNotIn('bytes=0-262143', r)                              # the first piece was not fetched again
+        self.assertNotIn(None, r)
+        self.assertIn(f'bytes={len(self.big) - 4321}-{len(self.big) - 1}', r)   # the last one came as a piece: still several connections
+
+    def test_etag_changed_and_the_check_breaks_keeps_the_part(self):
+        """The comparison could not be made (a busy server): it goes on over one connection, which waits and checks again."""
+        d = self.dl()
+        os.makedirs(os.path.dirname(d.part), exist_ok=True)
+        Path(d.part).write_bytes(self.big[:512 * 1024])
+        Path(d.meta).write_text(json.dumps({'url': d.url, 'size': d.size, 'sha256': d.sha256, 'etag': '"old"', 'bytes_done': 512 * 1024, 'parallel': True}))
+        self.files.etag['big.bin'] = '"new"'
+        real = download.Download._same_bytes
+
+        def busy_once(self_, n, ctx):
+            if not busy_once.done:
+                busy_once.done = True
+                self.files.answers['big.bin'] = [(503, None)]
+            return real(self_, n, ctx)
+        busy_once.done = False
+        with pieces(), fast_backoff(), mock.patch.object(download.Download, '_same_bytes', busy_once):
+            self.assertEqual(Path(d.run()).read_bytes(), self.big)
+        r = self.ranges()
+        self.assertNotIn(None, r)
+        self.assertNotIn('bytes=0-262143', r)
+        self.assertIn(f'bytes={512 * 1024}-', r)                           # carried on over one connection from the hashed run
 
     def test_server_ignores_range_goes_to_one_connection(self):
         self.files.ignore_range.add('big.bin')
@@ -2011,6 +2135,20 @@ class PackPlan(unittest.TestCase):
                                  ['derived/geo/national.sqlite', 'derived/geo/places.sqlite', 'map-set.json'])
                 self.assertEqual(d['map'], 'RI')
 
+    def test_changed_pack_file_with_a_state_map_installed(self):
+        # An older pack with a state map installed on its own; the release changes one pack file and its base map.
+        # Only the changed pack file counts toward the fetch; the state map is kept, not fetched over.
+        self.own_map()
+        release = {**self.pack, 'library-data/a.pdf': b'A' * 120, 'derived/geo/national.sqlite': b'new base map' * 9}
+        d = install.plan_update(self.lib, self.rows(release))
+        self.assertEqual((d['changed'], d['added'], d['removed']), (['library-data/a.pdf'], [], []))
+        self.assertEqual(d['unchanged'], ['library-data/catalog.json', 'pack.json'])
+        self.assertEqual((d['fetch_bytes'], d['bytes']['changed']), (120, 120))
+        self.assertEqual(d['reuse_bytes'], len(self.pack['library-data/catalog.json']) + len(self.pack['pack.json']))
+        self.assertEqual(d['kept']['map'], [('derived/geo/national.sqlite', 270), ('derived/geo/places.sqlite', 40),
+                                            ('map-set.json', len((self.lib / 'map-set.json').read_bytes()))])
+        self.assertEqual(d['map'], 'RI')
+
     def test_without_its_own_map_the_packs_map_is_compared(self):
         d = install.plan_update(self.lib, self.rows({**self.pack, 'derived/geo/national.sqlite': b'new base map' * 9}))
         self.assertEqual((d['changed'], d['kept']['map']), (['derived/geo/national.sqlite'], []))
@@ -2907,6 +3045,107 @@ def make_map(path, state='CA', extra=None):
         for k, v in files.items():
             z.writestr('LastbookData/' + k, v)
     return files
+
+
+class CloudOnly(Base):
+    """Files of the library whose contents are only in iCloud (#362): found from metadata alone, never opened."""
+
+    def library(self):
+        lib = self.tmp / 'LastbookData'
+        for rel in ('library-data/catalog.json', 'videos/a.mp4', 'videos/b.mp4', 'zim/old/c.zim'):
+            (lib / rel).parent.mkdir(parents=True, exist_ok=True)
+            (lib / rel).write_bytes(b'x' * 10)
+        return lib
+
+    def placeholders(self, lib, *rels):
+        """os.lstat as macOS reports an evicted iCloud item: the SF_DATALESS flag (0x40000000), contents not on this computer."""
+        real = os.lstat
+        cloud = {str(lib / r) for r in rels}
+
+        def lstat(path, *a, **kw):
+            st = real(path, *a, **kw)
+            if str(path) not in cloud:
+                return st
+            return mock.Mock(st_flags=st.st_flags | 0x40000000, st_size=st.st_size, st_mode=st.st_mode)
+        return mock.patch.object(hardware.os, 'lstat', lstat)
+
+    def test_placeholder_found_ordinary_file_not(self):
+        lib = self.library()
+        with mock.patch.object(hardware.sys, 'platform', 'darwin'), self.placeholders(lib, 'videos/b.mp4'):
+            r = hardware.cloud_only(lib)
+        self.assertEqual(r, {'files': 1, 'folders': 0, 'bytes': 10, 'examples': ['videos/b.mp4']})
+
+    def test_nothing_in_the_cloud(self):
+        lib = self.library()
+        with mock.patch.object(hardware.sys, 'platform', 'darwin'):
+            self.assertEqual(hardware.cloud_only(lib), {'files': 0, 'folders': 0, 'bytes': 0, 'examples': []})
+
+    def test_folder_in_the_cloud_is_not_listed(self):
+        # Listing an evicted folder asks iCloud for its contents, which can hang offline: count it, do not open it.
+        lib = self.library()
+        with mock.patch.object(hardware.sys, 'platform', 'darwin'), self.placeholders(lib, 'zim/old', 'zim/old/c.zim'):
+            r = hardware.cloud_only(lib)
+        self.assertEqual((r['files'], r['folders'], r['examples']), (0, 1, ['zim/old/']))
+
+    def test_files_are_never_opened(self):
+        lib = self.library()
+        with mock.patch.object(hardware.sys, 'platform', 'darwin'), self.placeholders(lib, 'videos/a.mp4'), \
+                mock.patch('builtins.open', side_effect=AssertionError('opened a file')):
+            self.assertEqual(hardware.cloud_only(lib)['files'], 1)
+
+    def test_only_on_a_mac(self):
+        with mock.patch.object(hardware.sys, 'platform', 'win32'):
+            self.assertIsNone(hardware.cloud_only(self.library()))
+
+    def test_setup_reports_it_for_the_open_library(self):
+        lib = self.library()
+        s = self.setup('manage', current=lib)
+        with mock.patch.object(hardware.sys, 'platform', 'darwin'), self.placeholders(lib, 'videos/a.mp4', 'videos/b.mp4'):
+            s.current_info()                       # counting starts in the background, so the page is not held up
+            s.cloud_thread.join(10)
+            r = s.current_info()['cloud_only']
+        self.assertEqual((r['files'], r['examples']), (2, ['videos/a.mp4', 'videos/b.mp4']))
+
+    def info_on(self, system):
+        """current_info as the page gets it on this system, and whether a count was started."""
+        s = self.setup('manage', current=self.library())
+        with mock.patch.object(hardware.sys, 'platform', system):
+            info = s.current_info()
+        return info, s.cloud_thread
+
+    def test_other_systems_are_not_counting(self):
+        # #370 review: None alone also meant "still counting", so Windows and Linux were asked again up to CLOUD_POLLS times.
+        for system in ('win32', 'linux'):
+            with self.subTest(system=system):
+                info, thread = self.info_on(system)
+                self.assertEqual((info['cloud_only'], info['cloud_counting'], thread), (None, False, None))
+        info, thread = self.info_on('darwin')
+        self.assertEqual((info['cloud_only'], info['cloud_counting']), (None, True))
+        thread.join(10)
+
+    @unittest.skipUnless(shutil.which('node'), 'needs Node')
+    def test_page_asks_again_only_while_counting_with_one_timer(self):
+        """setup.js's own cloudPoll, fed the engine's answer and drawn five times (every redraw of Manage calls it): no timer on
+        Windows or Linux, one timer on a Mac while the count runs, and a new one only after that one has run."""
+        script = r"""
+const src = require('fs').readFileSync(process.argv[1], 'utf8'), infos = JSON.parse(process.argv[2]);
+const section = (a, b) => src.slice(src.indexOf(a), src.indexOf(b, src.indexOf(a)));
+const out = {};
+for (const [system, c] of Object.entries(infos)) {
+  const timers = [];
+  const setTimeout = f => { timers.push(f); return timers.length };
+  let view = 'manage', S = {}, cloudPolls = 0, cloudT = null, cloudFor = '';
+  const CLOUD_POLL_MS = 3000, CLOUD_POLLS = 20, call = async () => S, cur = () => c, manageView = () => cloudPoll(c);
+  eval(section('  function cloudPoll(', '  function manageView('));
+  for (let i = 0; i < 5; i++) cloudPoll(c);
+  out[system] = timers.length;
+}
+console.log(JSON.stringify(out));
+"""
+        infos = {system: self.info_on(system)[0] for system in ('win32', 'linux', 'darwin')}
+        r = subprocess.run([shutil.which('node'), '-e', script, str(ROOT / 'web' / 'setup.js'), json.dumps(infos)],
+                           check=True, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(json.loads(r.stdout), {'win32': 0, 'linux': 0, 'darwin': 1})
 
 
 class Maps(Base):

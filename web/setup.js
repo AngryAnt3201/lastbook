@@ -71,6 +71,8 @@
   /* ------------------------------------------------------------ state */
   let S = null;           // GET state
   let view = 'choose';
+  const CLOUD_POLL_MS = 3000, CLOUD_POLLS = 20;   // the iCloud count runs in the engine's background: ask again for about a minute
+  let cloudPolls = 0, cloudT = null, cloudFor = '';   // one timer for the open library (cloudFor), at most CLOUD_POLLS asks
   let choice = { pack: null, ai: false, map: null };   // map: the selected state code
   let folder = '';
   let shortfall = null;   // the answer to a start that had no room: {need_bytes, free_bytes}
@@ -386,6 +388,33 @@
   }
 
   /* ---- manage */
+  // #362: files of this library whose contents are only in iCloud do not open offline. The engine counts them from metadata alone.
+  function cloudNote(c) {
+    const k = c.cloud_only;
+    if (!k || !(k.files || k.folders)) return '';
+    const n = (count, one) => `${count.toLocaleString()} ${one}${count === 1 ? '' : 's'}`;
+    const what = [k.files ? n(k.files, 'file') : '', k.folders ? n(k.folders, 'folder') : ''].filter(Boolean).join(' and ');
+    const one = k.files + k.folders === 1;
+    return `<p class="s-note" role="status"><b>${what} of this library ${one ? 'is' : 'are'} only in iCloud${k.bytes ? ` (${size(k.bytes)})` : ''}.</b>
+      ${one ? 'It' : 'They'} will not open without internet. Move the LastbookData folder out of iCloud Drive, or in Finder choose Keep Downloaded for it (macOS 15 or later).
+      <br><small>For example: ${k.examples.map(esc).join(', ')}</small></p>`;
+  }
+
+  // Ask again only while the engine is still counting. Windows and Linux never count (cloud_counting false), so no timer starts
+  // there. Every redraw of Manage calls this; a timer already waiting is not doubled.
+  function cloudPoll(c) {
+    if (c.folder !== cloudFor) { cloudFor = c.folder; cloudPolls = 0 }
+    if (!c.cloud_counting || cloudT || cloudPolls >= CLOUD_POLLS) return;
+    cloudPolls++;
+    cloudT = setTimeout(async () => {
+      cloudT = null;
+      if (view !== 'manage') return;
+      S = await call('state').catch(() => S);
+      const k = cur() || {}, n = k.cloud_only;
+      if (view === 'manage' && (k.cloud_counting || (n && (n.files || n.folders)))) manageView();   // redrawn only to show the note, or to ask again
+    }, CLOUD_POLL_MS);
+  }
+
   function manageView() {
     const c = cur(), p = packById(c.pack), m = model();
     const libraryUpdate = p && p.available !== false && packNeedsInstall(p);
@@ -402,6 +431,7 @@
           return `<div class="s-row">${ico('map', 's-ri')}<span><b>${mNow ? 'Detailed map: ' + esc(mapName(mNow)) : 'Detailed map'}</b><small>${mNow ? (mNow === 'us' ? 'Local streets and terrain everywhere' : 'Local streets, buildings and terrain') : 'None yet. Add one for your state.'}</small></span>
           <button class="btn plain" id="mapCh">${(c.address_indexes || []).length ? 'Choose state' : 'Add address search'}</button></div>` })() : ''}
       </div>
+      ${cloudNote(c)}
       ${old ? `<div class="s-row s-old">${ico('folder', 's-ri')}<span><b>The old library is still here</b><small>${esc(home(old.path))}${old.bytes ? ' · ' + size(old.bytes) : ''}</small></span>${confirmOld ? `<span class="s-confirm"><span>Delete it for good?</span><button class="btn danger" id="oldYes">Delete</button><button class="btn plain" id="oldNo">Keep</button></span>` : `<button class="btn plain" id="rmOld">${ico('trash')}Delete it</button>`}</div>` : ''}
       ${computer()}
       ${CAN.repair ? `<div class="s-have"><div class="s-row">${ico('ok', 's-ri')}<span><b>Library check</b><small id="lastCheck">${checkLine(c.checked)}</small></span><button class="btn plain" id="checkNow">Check now</button></div></div>` : ''}
@@ -411,6 +441,7 @@
       <p class="s-note${noteOk ? ' ok' : ''}" id="haveNote"${note ? '' : ' hidden'}>${esc(note)}</p>
       ${U && U.supported ? `<h2>App updates</h2>${updatesBox()}` : ''}`;
     wireUpdates();
+    cloudPoll(c);
     $('#otherLib').onclick = () => haveLibrary(false, $('#otherLib'), { library: true });   // only another LastbookData, on a USB stick or another drive (#266)
     if ($('#libraryUpdate')) $('#libraryUpdate').onclick = () => { choice.pack = c.pack; choice.ai = !!c.model; go('choose') };
     if ($('#upgrade')) $('#upgrade').onclick = () => { choice.pack = bigger[0].id; choice.ai = !!c.model; go('choose') };

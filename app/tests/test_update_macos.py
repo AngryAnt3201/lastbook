@@ -318,6 +318,7 @@ class PackagingTest(unittest.TestCase):
 
     def test_bundle_version_from_short_version(self):
         import plistlib
+        import re
         F = load('sparkle_framework')
         app = fake_app()
         plist = app / 'Contents' / 'Info.plist'
@@ -328,7 +329,7 @@ class PackagingTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             F.set_bundle_version(app)
         spec = (HERE.parents[1] / 'packaging' / 'lastbook_macos.spec').read_text(encoding='utf-8')
-        self.assertIn("version='1.1.15'", spec)                               # still the one literal the version bump edits
+        self.assertEqual(len(re.findall(r"version='\d+\.\d+\.\d+'", spec)), 1)   # still the one literal the version bump edits
         self.assertNotIn('CFBundleVersion', spec)
 
     def test_extracts_only_the_framework_and_nothing_outside(self):

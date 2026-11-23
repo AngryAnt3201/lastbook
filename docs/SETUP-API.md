@@ -64,11 +64,16 @@ Packs may be split into several files later; setup downloads all `files` of a pa
 
 `ALLOWED_HOSTS`: `downloads.lastbook.org`, the bucket's current `*.r2.dev` host (until the domain is live), `huggingface.co`,
 and the hosts Hugging Face redirects model downloads to (`cas-bridge.xethub.hf.co`, `*.hf.co`; on 2026-11-12 the model resolved to `us.aws.cdn.hf.co`). R2 ignores If-Range, so the downloader compares the ETag itself.
+A new ETag on a resume does not by itself start the file over, because the same file uploaded again gets one: three 1 MiB
+stretches of what is on disk (start, middle, end) are fetched again and compared. If they are the server's, the download
+carries on under the new ETag, and the SHA-256 at the end still judges the whole file; if a byte differs, it starts over.
+If a stretch cannot be fetched, that is a broken or busy connection like any other, and the partial file is kept (#208).
 A file of `PARALLEL_MIN` (512 MiB) or more is fetched over `CONNECTIONS` (8) connections at once, each with a closed Range
 for one `PIECE` (16 MiB). One connection to `downloads.lastbook.org` gave about 2 MB/s and 8 about 13 MB/s (2026-11-17).
 Pieces are handed out in order, at most `AHEAD` (16) past the first unfinished one. The run of finished pieces from byte 0 is
 hashed as it completes, read back from the disk, so the SHA-256 is ready when the last piece lands. Every 206 must carry the
-first one's ETag and total size: another ETag starts the file over (twice: it goes on over one connection), another size
+first one's ETag and total size: another ETag is checked as above against the hashed run (the same bytes: the run is kept and
+the pieces carry on; other bytes: the file starts over; a second new ETag: it goes on over one connection), another size
 fails as `checksum`, and a 200 to a Range goes on over one connection from the hashed run. The exact list is a constant in
 `engine/setup/download.py`, and the package scan checks that it is the only module that opens connections.
 
@@ -110,7 +115,7 @@ are served by `engine/setup/api.py` alone. In normal mode `server.py` hands `/ap
 
 | Request | Answer |
 |---|---|
-| `GET /api/setup/state` | `{mode: "first-run" or "manage", hardware, manifest: {source: "bundled" or "fetched", packs, models}, current: {folder, pack, model} or null, found: [...], recommend: {pack, ai, why}, job}` |
+| `GET /api/setup/state` | `{mode: "first-run" or "manage", hardware, manifest: {source: "bundled" or "fetched", packs, models}, current: {folder, pack, model, cloud_only, cloud_counting} or null (cloud_only: `{files, folders, bytes, examples}` of the library that are only in iCloud, counted from metadata in the background; null until counted and on other systems. cloud_counting: true only while a Mac counts, so the page knows when to ask again), found: [...], recommend: {pack, ai, why}, job}` |
 | `POST /api/setup/start` `{pack, ai: true or false, folder?}` | the new `job`, or `{error, need_bytes, free_bytes}` |
 | `GET /api/setup/job` | `job` |
 | `POST /api/setup/pause`, `/resume`, `/cancel`, `/retry` | `job` |
