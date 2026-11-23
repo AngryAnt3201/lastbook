@@ -289,6 +289,70 @@ class DryRun(unittest.TestCase):
         self.assertIn('unknown option', err)
         self.assertIn('usage:', err)
 
+    def test_set_before_dry_run_is_refused_before_the_publishing_client(self):
+        opened = []
+        old = SM._r2
+        SM._r2 = lambda: opened.append('r2')
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                code, out, err = self._cli(['--set', d, '--dry-run', CODE])
+        finally:
+            SM._r2 = old
+        self.assertEqual(code, 2)
+        self.assertEqual(opened, [])
+        self.assertEqual(out, '')
+        self.assertIn('--dry-run must be given first', err)
+        self.assertIn('usage:', err)
+
+    def test_one_set_folder_for_several_countries_is_refused_before_publishing(self):
+        opened, counts = [], []
+        old_r2, old_coverage = SM._r2, SM.coverage_counts
+        SM._r2 = lambda: opened.append('r2')
+        SM.coverage_counts = lambda *a, **k: counts.append(a) or {}
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                code, out, err = self._cli(['--dry-run', CODE, 'eu-de', '--set', d])
+        finally:
+            SM._r2, SM.coverage_counts = old_r2, old_coverage
+        self.assertEqual(code, 2)
+        self.assertEqual(opened, [])
+        self.assertEqual(counts, [])
+        self.assertEqual(out, '')
+        self.assertIn('one --set folder cannot describe more than one country', err)
+        self.assertIn('usage:', err)
+
+    def test_bare_dry_run_with_empty_allowlist_reports_no_countries_checked(self):
+        old_countries, old_r2, old_coverage = SM.PUBLISHED_COUNTRIES, SM._r2, SM.coverage_counts
+        SM.PUBLISHED_COUNTRIES = {}
+        SM._r2 = lambda: self.fail('a bare dry run must not open the publishing client')
+        SM.coverage_counts = lambda *a, **k: self.fail('a bare dry run has no country to check')
+        try:
+            code, out, err = self._cli(['--dry-run'])
+        finally:
+            SM.PUBLISHED_COUNTRIES, SM._r2, SM.coverage_counts = old_countries, old_r2, old_coverage
+        self.assertEqual(code, 0)
+        self.assertIn('no countries checked', out)
+        self.assertEqual(err, '')
+
+    def test_valid_dry_run_still_works_without_the_publishing_client(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_set(d, detailed=True)
+            opened = []
+            old = SM._r2
+            SM._r2 = lambda: opened.append('r2')
+            try:
+                code, out, err = self._cli(['--dry-run', CODE, '--set', d])
+            finally:
+                SM._r2 = old
+        self.assertEqual(opened, [])
+        self.assertEqual(code, 1)                  # the allowlist is still empty
+        self.assertNotIn('Traceback', err)
+        record = json.loads(out)
+        self.assertEqual(record['region'], CODE)
+        self.assertEqual(record['set'], str(Path(d)))
+        self.assertTrue(all(record['coverage'].values()))
+        self.assertTrue(record['publish_blockers'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -411,8 +411,9 @@ DRY_RUN_USAGE = 'usage: state_maps.py --dry-run [eu-xx ...] [--set DIR]'
 
 
 def dry_run_args(args):
-    """Parse --dry-run's arguments: country codes plus at most one --set DIR, wherever it appears. A repeated or
-    incomplete --set, or an unknown option, is refused with the usage rather than read as a country code."""
+    """Parse --dry-run's arguments: country codes plus at most one --set DIR. One folder can only describe one
+    country's set, so --set with several codes is refused. A repeated or incomplete --set, or an unknown option, is
+    refused with the usage rather than read as a country code."""
     codes, where, i = [], None, 0
     while i < len(args):
         arg = args[i]
@@ -436,6 +437,8 @@ def dry_run_args(args):
         else:
             codes.append(arg)
             i += 1
+    if where is not None and len(codes) > 1:
+        raise ValueError('one --set folder cannot describe more than one country; ' + DRY_RUN_USAGE)
     return codes, where
 
 
@@ -444,6 +447,9 @@ def dry_run(codes, where=None):
     a state such as RI gets a clear blocker instead of a lookup failure. Reads the built set only: no zip, no upload,
     no manifest, no bucket credentials. Exits 1 if any code would not be published."""
     codes = list(codes)
+    if not codes:
+        print('no countries checked: packaging/country-publication.json lists none')
+        return 0
     unknown = {code for code in codes if code not in COUNTRIES}
     ok = not unknown
     for code in codes:
@@ -460,6 +466,9 @@ def dry_run(codes, where=None):
 
 def main():
     args = sys.argv[1:]
+    if any(arg == '--dry-run' or arg.startswith('--dry-run=') for arg in args) and args[:1] != ['--dry-run']:
+        print('--dry-run must be given first; ' + DRY_RUN_USAGE, file=sys.stderr)
+        sys.exit(2)
     if args[:1] == ['--dry-run']:
         try:
             codes, where = dry_run_args(args[1:])
