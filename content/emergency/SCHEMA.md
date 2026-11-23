@@ -40,7 +40,7 @@ what to show when the country is unknown are still being discussed in the issue.
 | `country` | The country's name in English. |
 | `code` | ISO 3166-1 alpha-2, capitals. Must match the file name. |
 | `calling_code` | The country calling code, `+` and digits. |
-| `general` | The `number` of the service that answers any emergency, or `null` when the country has none. It must match a `number` in `services`. |
+| `general` | The `number` of the service that answers any emergency, or `null`. `null` means no unified line is recorded here; it does not say the country has none, unless a source establishes that. It must match a `number` in `services`. |
 | `services` | The list of numbers, most reliable first. At least one. |
 
 ## Service fields
@@ -68,7 +68,8 @@ name, `works_from_source` for where it can be dialled from, `free_source` for th
 unknown (`works_from: []`, `free: null`), never filled in from memory. The sources may be different pages: in
 `CL.json`, 130 to 134 and 137 are read in Subtel's numbering appendix (Resolución 1534), the dialling in Decreto 747
 art. 15 and the cost in Decreto 18 art. 21. `when` holds only what a person needs to know; it does not carry the legal
-basis.
+basis. It stays within what the row's cited pages say: advice such as "call another service first" goes in only with
+a source of its own.
 
 A service whose `source` could not be reached is not added. A number nobody can source stays out of the table.
 

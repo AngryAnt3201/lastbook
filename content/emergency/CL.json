@@ -122,7 +122,7 @@
           "investigations"
         ]
       },
-      "when": "Emergency calls answered by the Policía de Investigaciones. The crime-report page of ChileAtiende also gives it for crimes in progress.",
+      "when": "Emergency calls answered by the Policía de Investigaciones.",
       "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
       "checked_on": "2026-11-22",
       "verified": "official",
@@ -224,7 +224,7 @@
           "toxic"
         ]
       },
-      "when": "Poisoning. Its page does not say whether it covers the whole country. For a life-threatening poisoning call SAMU 131 first.",
+      "when": "Toxicological emergencies. Its page does not say whether it covers the whole country, or its hours.",
       "source": "https://cituc.uc.cl/",
       "checked_on": "2026-11-21",
       "verified": "official",
@@ -254,7 +254,7 @@
           "mental health"
         ]
       },
-      "when": "Free, confidential support from trained staff, 24 hours every day. For danger right now, call SAMU 131.",
+      "when": "Free, confidential professional support, 24 hours every day, from any mobile phone.",
       "source": "https://www.minsal.cl/prevencion-del-suicidio/",
       "checked_on": "2026-11-22",
       "verified": "official",
