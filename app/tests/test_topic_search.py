@@ -145,8 +145,10 @@ UNDISTURBED = {
     'bus': ['disaster', 'no-car'], 'no bus': ['disaster', 'no-car'], 'bar soap': ['sanitation', 'hands'],
     'heat wave': ['shelter', 'heat'], 'grill': ['food', 'cook'], 'canned food': ['food', 'cook'],
     # Everyday phrases that opened the wrong guide or none: "no electricity" opened Burn or scald, "high fever" the
-    # high-rise fire choice, and "bathroom" and "no cell service" found nothing. The rest are guards.
-    'no electricity': ['power', 'first-hours'], 'electricity': ['power', 'first-hours'],
+    # high-rise fire choice, and "bathroom" and "no cell service" found nothing. The rest are guards. The word is on
+    # the long outage choice only: on "The power just went out" as well, "electric shock from a downed power line"
+    # left the damaged home choice (test_topic_search_emergency).
+    'no electricity': ['power', 'long-outage'], 'electricity': ['power', 'long-outage'],
     'no electricity for days': ['power', 'long-outage'], 'electricity burn': ['hurt', 'burn'], 'electric shock': ['hurt', 'burn'],
     'high fever': ['health', 'start'], 'baby has a high fever': ['health', 'start'], 'high blood pressure': ['health', 'chronic'],
     'bathroom': ['sanitation', None], 'where to go to the bathroom': ['sanitation', None], 'bat bite': ['hurt', 'animal-bite'],
