@@ -11,14 +11,19 @@ const progEnd = appSource.indexOf('/* ------------------------------------------
 assert.ok(progStart >= 0 && progEnd > progStart, 'watch progress and resumable found in web/app.js');
 const storageSnippet = appSource.slice(progStart, progEnd);
 
-// Extract the resume calculation expression from watch() in web/app.js
-const resumeExprMatch = appSource.match(/const resumeAt = (start === null && !isWatched[^;]+);/);
+// Extract the resume calculation expression and watch function from watch() in web/app.js
+const resumeExprMatch = appSource.match(/const resumeAt = (start === null && p && [^;]+);/);
 assert.ok(resumeExprMatch, 'resumeAt calculation found in web/app.js');
 const resumeSnippet = `function getResumeAt(id, t, d) {
   const p = vprog()[id];
   const start = t !== null && Number.isFinite(+t) && +t >= 0 ? +t : null;
   return ${resumeExprMatch[1]};
 }`;
+
+const sWatch = appSource.indexOf('async function watch(id, t, from) {');
+const nextComment = appSource.indexOf('\n/* ', sWatch);
+assert.ok(sWatch >= 0 && nextComment > sWatch, 'watch function found in web/app.js');
+const watchSnippet = appSource.slice(sWatch, nextComment);
 
 // Extract card badge and watched button directly from web/app.js
 const btnStart = appSource.indexOf('const watchedButton =');
@@ -46,9 +51,52 @@ function setupEnvironment() {
     set(k, v) { storage.setItem('sg.' + k, JSON.stringify(v)) },
   };
 
+  const elements = new Map();
+  function getEl(sel) {
+    const id = sel.replace(/^#/, '');
+    if (!elements.has(id)) {
+      elements.set(id, {
+        id,
+        attributes: new Map(),
+        hidden: false,
+        currentTime: 0,
+        played: false,
+        options: [],
+        value: '1',
+        play() { this.played = true; return Promise.resolve(); },
+        pause() { this.played = false; },
+        setAttribute(k, v) { this.attributes.set(k, String(v)); if (k === 'hidden') this.hidden = true; },
+        getAttribute(k) { if (k === 'hidden') return this.hidden ? '' : null; return this.attributes.get(k) ?? null; },
+        addEventListener() {},
+        remove() { this.removed = true; elements.delete(id); },
+        querySelector() { return { textContent: '' }; },
+        closest() { return null; },
+      });
+    }
+    return elements.get(id);
+  }
+
+  const main = {
+    set innerHTML(html) {
+      this._html = html;
+      const mResume = html.match(/<div class="resume" id="resume"( hidden)?>/);
+      if (mResume) {
+        const res = getEl('#resume');
+        res.hidden = Boolean(mResume[1]);
+      }
+      const mWatched = html.match(/id="markWatched"[^>]*aria-pressed="([^"]+)"/);
+      if (mWatched) {
+        const btn = getEl('#markWatched');
+        btn.setAttribute('aria-pressed', mWatched[1]);
+      }
+    },
+    get innerHTML() { return this._html || ''; }
+  };
+
   let clock = 10000;
   const context = vm.createContext({
     store,
+    main,
     fetch: async () => ({ status: 200, ok: true }),
     encodeURIComponent,
     Boolean,
@@ -59,21 +107,42 @@ function setupEnvironment() {
     held: async ids => ids,
     ico: n => '<svg>' + n + '</svg>',
     clock: s => String(s),
+    fmtDur: s => String(s) + 's',
     esc: s => String(s ?? ''),
     fromQ: () => '',
     fileUrl: p => '/' + p,
+    backButton: () => '',
+    saveButton: () => '',
+    momentSection: () => '',
+    wireMoments: () => '',
+    toast: () => '',
+    setTitle: () => '',
+    remember: () => '',
+    Option: function(text, val) { this.text = text; this.value = val; },
+    $: sel => {
+      if (sel === '#resume' && !main.innerHTML.includes('id="resume"')) return null;
+      return getEl(sel);
+    },
+    api: async url => {
+      if (url.includes('/api/doc/')) return { id: 'vid-1', title: 'Video 1', duration: 100, path: 'vid1.mp4' };
+      if (url.includes('/api/transcript/')) return { cues: [] };
+      if (url.includes('/api/videos/related/')) return [];
+      return {};
+    },
   });
 
   vm.runInContext(storageSnippet, context);
   vm.runInContext(resumeSnippet, context);
   vm.runInContext(buttonSnippet, context);
   vm.runInContext(vcardSnippet, context);
+  vm.runInContext(watchSnippet, context);
 
   context.vprog = vm.runInContext('vprog', context);
   context.vwatched = vm.runInContext('vwatched', context);
   context.watchedButton = vm.runInContext('watchedButton', context);
+  context.watch = vm.runInContext('watch', context);
 
-  return { context, store, memory };
+  return { context, store, memory, elements };
 }
 
 let checks = 0;
@@ -106,7 +175,7 @@ let checks = 0;
   // User manually marks watched
   context.setWatched('vid-1', true);
   assert.equal(context.isWatched('vid-1'), true, 'video is now watched');
-  assert.equal(context.getResumeAt('vid-1', null, { duration: 100 }), 0, 'resumeAt is suppressed when watched');
+  assert.equal(context.getResumeAt('vid-1', null, { duration: 100 }), 30, 'saved position is preserved for resume');
 
   const list = await context.resumable();
   assert.equal(list.length, 0, 'watched video is excluded from resumable list');
@@ -193,6 +262,38 @@ let checks = 0;
   };
   const unpatchedList = await unpatchedResumable();
   assert.equal(unpatchedList.length, 1, 'resumable without isWatched filter includes watched video');
+  checks++;
+}
+
+// Test 7: Opening a watched video with saved progress preserves resume, which becomes immediately usable upon unmarking on-screen
+{
+  const { context, elements } = setupEnvironment();
+  context.setVprog('vid-1', { t: 30, d: 100, title: 'Video 1' });
+  context.setWatched('vid-1', true);
+
+  await context.watch('vid-1');
+
+  const resEl = elements.get('resume');
+  assert.ok(resEl, 'resume element exists in DOM');
+  assert.equal(resEl.hidden, true, 'resume prompt is suppressed while video is watched');
+
+  const bWatched = elements.get('markWatched');
+  assert.equal(bWatched.getAttribute('aria-pressed'), 'true', 'dock button reflects watched');
+
+  // Unmark without leaving or reopening the player:
+  bWatched.onclick();
+  assert.equal(context.isWatched('vid-1'), false, 'video is now unmarked');
+  assert.equal(bWatched.getAttribute('aria-pressed'), 'false', 'dock button reflects unwatched');
+  assert.equal(resEl.hidden, false, 'resume prompt becomes usable immediately without navigating away');
+
+  // Click resume to verify position and dismissal:
+  const resYes = elements.get('resYes');
+  const vid = elements.get('vid');
+  resYes.onclick();
+
+  assert.equal(vid.currentTime, 30, 'resumes directly to the saved position');
+  assert.equal(vid.played, true, 'playback is triggered');
+  assert.equal(resEl.removed, true, 'resume prompt is dismissed after resuming');
   checks++;
 }
 

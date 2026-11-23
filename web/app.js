@@ -652,7 +652,8 @@ async function watch(id, t, from) {
   remember({ key: 'v:' + id, title: d.title, href: selfHref, sub: 'Video · ' + fmtDur(d.duration) });
   const p = vprog()[id];
   const start = t !== null && Number.isFinite(+t) && +t >= 0 ? +t : null;
-  const resumeAt = start === null && !isWatched(id, p, d) && p && p.t > 15 && (!d.duration || p.t < d.duration - 20) ? p.t : 0;
+  const resumeAt = start === null && p && p.t > 15 && (!d.duration || p.t < d.duration - 20) ? p.t : 0;
+  const watched = isWatched(id, p, d);
   main.innerHTML = `<div class="rtop">${backButton(from, ['nav.videos', 'Videos'])}</div>
   <div class="watch">
     <div>
@@ -661,7 +662,7 @@ async function watch(id, t, from) {
       ${d.remote ? `<p class="small muted" style="margin:6px 0 0">Stored on the remote drive “${esc(d.remote)}”. It plays only while that computer is reachable.</p>` : ''}
       <h1 class="vtitle">${esc(d.title)}</h1>
       <div class="vmeta"><b>${esc(d.publisher || '')}</b><span>${fmtDur(d.duration)}</span>${d.upload_date ? `<span>${esc(d.upload_date.replace(/(\d{4})(\d\d)(\d\d)/, '$1-$2-$3'))}</span>` : ''}<span>${esc(d.trust)}</span></div>
-      ${resumeAt ? `<div class="resume" id="resume">You stopped at ${clock(resumeAt)}. <button class="btn" id="resYes">Resume</button><button class="btn plain" id="resNo">Start over</button></div>` : ''}
+      ${resumeAt ? `<div class="resume" id="resume"${watched ? ' hidden' : ''}>You stopped at ${clock(resumeAt)}. <button class="btn" id="resYes">Resume</button><button class="btn plain" id="resNo">Start over</button></div>` : ''}
       <div class="vactions dock">${saveButton({ key: 'v:' + id, title: d.title, href: selfHref, sub: 'Video · ' + fmtDur(d.duration) })}${watchedButton(id, d)}<a class="btn plain" title="Ask about this video" href="#/ask?about=${encodeURIComponent('video:' + id)}&${fromQ()}" id="askv">${ico('ask')}<span>Ask about this video</span></a></div>
       ${momentSection(true)}
       <div class="notice small">A video shows how one person did something. Watching isn’t practice, and it may not match current safety guidance — check a manual for anything risky.</div>
@@ -715,7 +716,7 @@ async function watch(id, t, from) {
     };
   }
   let lastSave = 0;
-  let below90 = !((t || resumeAt) && (d.duration || vid.duration) && (t || resumeAt) >= (d.duration || vid.duration) * 0.9);
+  let below90 = !((t || (resumeAt && !watched)) && (d.duration || vid.duration) && (t || (resumeAt && !watched)) >= (d.duration || vid.duration) * 0.9);
   const saveProg = () => {
     if (vid.currentTime > 3) {
       setVprog(id, { t: vid.currentTime, d: d.duration || vid.duration, title: d.title, thumb: d.thumb });
@@ -731,7 +732,7 @@ async function watch(id, t, from) {
     if (!d.duration && vid.duration) d.duration = vid.duration;
     const dur = d.duration || vid.duration;
     if (dur) {
-      const pos = vid.currentTime || t || (resumeAt && $('#resume') ? resumeAt : 0);
+      const pos = vid.currentTime || t || (resumeAt && $('#resume') && !$('#resume').hidden ? resumeAt : 0);
       below90 = pos < dur * 0.9;
     }
   });
