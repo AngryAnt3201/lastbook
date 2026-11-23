@@ -63,11 +63,17 @@ function setupEnvironment() {
         played: false,
         options: [],
         value: '1',
-        play() { this.played = true; return Promise.resolve(); },
-        pause() { this.played = false; },
+        listeners: {},
+        play() { this.played = true; this.trigger('play'); return Promise.resolve(); },
+        pause() { this.played = false; this.trigger('pause'); },
         setAttribute(k, v) { this.attributes.set(k, String(v)); if (k === 'hidden') this.hidden = true; },
         getAttribute(k) { if (k === 'hidden') return this.hidden ? '' : null; return this.attributes.get(k) ?? null; },
-        addEventListener() {},
+        addEventListener(event, fn) {
+          (this.listeners[event] = this.listeners[event] || []).push(fn);
+        },
+        trigger(event) {
+          (this.listeners[event] || []).forEach(fn => fn());
+        },
         remove() { this.removed = true; elements.delete(id); },
         querySelector() { return { textContent: '' }; },
         closest() { return null; },
@@ -120,11 +126,12 @@ function setupEnvironment() {
     remember: () => '',
     Option: function(text, val) { this.text = text; this.value = val; },
     $: sel => {
-      if (sel === '#resume' && !main.innerHTML.includes('id="resume"')) return null;
+      if (sel === '#resume' && !elements.has('resume')) return null;
       return getEl(sel);
     },
     api: async url => {
-      if (url.includes('/api/doc/')) return { id: 'vid-1', title: 'Video 1', duration: 100, path: 'vid1.mp4' };
+      const id = (/doc\/([^/?#]+)/.exec(url) || [])[1] || 'vid-1';
+      if (url.includes('/api/doc/')) return { id, title: 'Video ' + id, duration: 100, path: id + '.mp4' };
       if (url.includes('/api/transcript/')) return { cues: [] };
       if (url.includes('/api/videos/related/')) return [];
       return {};
@@ -294,6 +301,41 @@ let checks = 0;
   assert.equal(vid.currentTime, 30, 'resumes directly to the saved position');
   assert.equal(vid.played, true, 'playback is triggered');
   assert.equal(resEl.removed, true, 'resume prompt is dismissed after resuming');
+  checks++;
+}
+
+// Test 8: Watching in the player dismisses the old resume prompt so unmarking does not offer the old timestamp
+{
+  const { context, elements } = setupEnvironment();
+  context.setVprog('vid-2', { t: 30, d: 100, title: 'Video 2' });
+  context.setWatched('vid-2', true);
+
+  await context.watch('vid-2');
+
+  const vid = elements.get('vid');
+  const resEl = elements.get('resume');
+  assert.ok(resEl, 'resume element exists before playback');
+  assert.equal(resEl.hidden, true, 'resume is hidden while watched');
+
+  // Person plays and advances playback to 0:45 in this player:
+  vid.trigger('play');
+  assert.equal(resEl.removed, true, 'playback dismisses the old resume prompt');
+
+  vid.currentTime = 45;
+  vid.trigger('pause');
+
+  // Verify player saved 45:
+  const prog = context.vprog();
+  assert.equal(prog['vid-2'].t, 45, 'progress updated to 45');
+
+  // Person unmarks the video while still on that screen:
+  const bWatched = elements.get('markWatched');
+  bWatched.onclick();
+  assert.equal(context.isWatched('vid-2'), false, 'video is now unmarked');
+
+  // Verify the old resume prompt is NOT offered:
+  assert.equal(elements.has('resume'), false, 'old resume prompt is not offered after watching');
+  assert.equal(vid.currentTime, 45, 'player remains at current position 45 rather than jumping back to 30');
   checks++;
 }
 

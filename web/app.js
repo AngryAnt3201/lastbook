@@ -693,8 +693,9 @@ async function watch(id, t, from) {
       : `This video file couldn’t be played here. <a href="${fileUrl(d.path)}" target="_blank" rel="noopener">Open the file directly</a>.`);
   }, { once: true });
   if (resumeAt) {
-    $('#resYes').onclick = () => { vid.currentTime = resumeAt; vid.play().catch(() => { }); $('#resume').remove() };
-    $('#resNo').onclick = () => { vid.currentTime = 0; vid.play().catch(() => { }); $('#resume').remove() };
+    $('#resYes').onclick = () => { vid.currentTime = resumeAt; vid.play().catch(() => { }); $('#resume')?.remove() };
+    $('#resNo').onclick = () => { vid.currentTime = 0; vid.play().catch(() => { }); $('#resume')?.remove() };
+    vid.addEventListener('play', () => { $('#resume')?.remove() });
   }
   const updateWatchedBtn = () => {
     const b = $('#markWatched');
@@ -719,6 +720,7 @@ async function watch(id, t, from) {
   let below90 = !((t || (resumeAt && !watched)) && (d.duration || vid.duration) && (t || (resumeAt && !watched)) >= (d.duration || vid.duration) * 0.9);
   const saveProg = () => {
     if (vid.currentTime > 3) {
+      $('#resume')?.remove();
       setVprog(id, { t: vid.currentTime, d: d.duration || vid.duration, title: d.title, thumb: d.thumb });
     }
   };
