@@ -555,15 +555,30 @@ Not recorded or not determinable:
 - Timings on a machine other than the author's PC (a Ryzen 7 5800X3D desktop).
 - Live tests with a local model: qualitative, with no counted outcome.
 
-## 13. Size of the change (counted on the author's fork)
+## 13. Size of the change
 
-- **About 3,300 lines of code** over upstream in the proposed search engine's files: the five new modules (`engine/sections.py` 250,
-  `typos.py` 648, `confidence.py` 439, `meaning_red.py` 381, `wiki_pick.py` 122), `server.py` (123), `retrieval.py` (77), the runner's
-  `--embed` mode (115), the tools that build the meaning model and the word list (266), `web/chat.js` and `web/app.js` (111), and about
-  750 lines of `assistant.py`. Not counted: the meaning check's 689 example sentences, tests, docs.
-- **About 145 tests** in the search tests: `test_confidence` 40, `test_typos` 33, `test_meaning_red` 29, `test_turn_hits` 16, `test_bridge` 9,
-  `test_long_pages` 7, `test_wiki_pick` 6, `test_chat_steps` 3, `test_what_ships` 2, and the English-search tests in `test_setup`. Separate from
-  the measured test sets (section 10).
+Counted on what is proposed, part by part (`git diff --numstat` from each branch to the next, `main` 9645686 →
+`triage/1-search-eval` … `triage/8-conversation`; part 1 includes c758327).
+
+| Part | Code (+/-) | Tests (+lines, `def test_`) | New modules and tools |
+|---|---|---|---|
+| 1 test set and scorer | +639 | +106, 8 | `tools/search_eval/score.py`, `stats.py`, `index_identity.py` |
+| 2 sections | +438 / -55 | +231, 8 | `engine/sections.py` |
+| 3 typos | +755 / -5 | +389, 33 | `engine/typos.py`, `tools/english_words.py` |
+| 4 encyclopedias | +185 / -29 | +128, 12 | `engine/wiki_pick.py` |
+| 5 confidence | +629 / -20 | +650, 43 | `engine/confidence.py` |
+| 6 runner `--embed` | +104 / -12 | 0 | (C++ only) |
+| 7 urgency | +806 / -27 | +871, 61 | `engine/meaning_red.py`, `engine/urgent_phrases.py`, `tools/meaning_red_model.py` |
+| 8 conversation | +574 / -80 | +574, 48 | |
+| **All** | **+4,130 / -228** | **+2,949, 213** | |
+
+- **Code:** Python, JavaScript, CSS, C++, shell, the macOS spec and HTML outside `app/tests/` (HTML is only version
+  bumps). Not counted: tests, docs, data (the test set's question files, the English word list's licence, the guides'
+  `urgent` phrases, the meaning check's 689 example sentences).
+- **Six sub-modules** of the search engine (`engine/sections.py`, `typos.py`, `wiki_pick.py`, `confidence.py`,
+  `meaning_red.py`, `urgent_phrases.py`), plus the runner's `--embed` mode and the tools above.
+- **Tests:** `def test_` functions added in `app/tests/` (some run Node checks of `web/chat.js` and `web/words.js`).
+  Separate from the measured test sets (section 10).
 
 ## 14. Baseline on `main`
 
