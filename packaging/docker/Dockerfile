@@ -9,9 +9,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends poppler-utils curl socat ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# The same wheels as the Linux package: keyword search, no onnxruntime.
-COPY packaging/linux/requirements_linux.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+# The same wheels as the Linux package: keyword search, no onnxruntime. The bind mount also stops the legacy builder
+# here ("the --mount option requires BuildKit"), before any repository file is copied: only BuildKit reads
+# Dockerfile.dockerignore, so a legacy build would copy in what that file keeps out.
+RUN --mount=type=bind,source=packaging/linux/requirements_linux.txt,target=/tmp/requirements.txt \
+    pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Only what the server runs, path by path (Dockerfile.dockerignore keeps the rest out of the context too): no
 # .git, no local settings, no library, model or generated files. Deleting them in a later step would leave them in

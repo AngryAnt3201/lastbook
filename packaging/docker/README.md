@@ -97,10 +97,11 @@ It places harmless sentinel files where private or local files would be (`.git`,
 credentials, `web/home-area.json`, `__pycache__`), builds the image, saves it, and looks through every layer and the
 image metadata for them by path and by content. Then it removes the files it made.
 
-Both the build and the check rely on BuildKit, the default builder since Docker 23 and in Docker Desktop: the legacy
-builder ignores `Dockerfile.dockerignore`. The check builds with `docker buildx build --load`, so it needs the buildx
-plugin (Docker Desktop has it) and stops with a message without it. It runs under Bash 3.2 (the macOS system Bash) or
-newer.
+Both the build and the check need BuildKit, the default builder since Docker 23 and in Docker Desktop. The legacy
+builder ignores `Dockerfile.dockerignore`, so the Dockerfile stops it before copying anything from the repository, with
+`the --mount option requires BuildKit`. On an older Docker, build with `docker buildx build --load` (or set
+`DOCKER_BUILDKIT=1`) instead. The check builds with `docker buildx build --load`, so it needs the buildx plugin (Docker
+Desktop has it) and stops with a message without it. It runs under Bash 3.2 (the macOS system Bash) or newer.
 
 ## Code in the library folder
 

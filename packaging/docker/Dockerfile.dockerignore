@@ -1,6 +1,7 @@
 # The build context is the top of the repository, and only what the server needs reaches it. Docker (BuildKit) reads
-# this file because it sits beside packaging/docker/Dockerfile; the Dockerfile's COPY lines name the same paths, so
-# nothing else gets in even with a builder that ignores it. check_image.sh tests both against a built image.
+# this file because it sits beside packaging/docker/Dockerfile; the Dockerfile's COPY lines name the same paths. The
+# legacy builder ignores this file, so the Dockerfile stops it before the first COPY. check_image.sh tests both
+# against a built image.
 *
 !server.py
 !assistant.py
