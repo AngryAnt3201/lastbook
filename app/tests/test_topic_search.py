@@ -150,6 +150,11 @@ UNDISTURBED = {
     'winter storm': ['shelter', 'cold'], 'furnace smells like gas': ['power', 'gas'], 'gas furnace': ['power', 'gas'],
     'lost in the forest': ['comms', 'signal'],
     'baby formula': ['food', 'special'], 'food allergies': ['food', 'outage'], 'spoiled food': ['food', 'outage'],
+    # "pack" starts "package", so packing searches opened the suspicious package choice. The evacuation choice cites
+    # the reading on what to take (the Five Ps). The last three are guards.
+    'what to pack': ['disaster', 'wildfire'], 'pack a bag': ['disaster', 'wildfire'], 'packing': ['disaster', 'wildfire'],
+    'suspicious package': ['disaster', 'explosion'], 'unattended package': ['disaster', 'explosion'],
+    'take shelter': ['disaster', 'shelter-in-place'],
     'pet food': ['food', 'outage'],
     'dentist': ['health', None], 'toothache': ['health', 'teeth'],
     'cold frame': ['repair', 'build'], 'freezing': ['shelter', 'cold'],
