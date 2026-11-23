@@ -428,6 +428,195 @@ class Buttons(html.parser.HTMLParser):
             self.buttons[-1][1] += data
 
 
+FILTER_ACT = r"""
+const fs = require('fs');
+const chat = fs.readFileSync(process.argv[1], 'utf8'), app = fs.readFileSync(process.argv[2], 'utf8');
+const line = re => app.split('\n').find(l => re.test(l));
+function parseAttrs(s, el) {
+  const re = /([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g;
+  let m; while ((m = re.exec(s))) el.setAttribute(m[1], m[2] ?? m[3] ?? m[4] ?? '');
+}
+function parseHTML(html, doc) {
+  const root = doc.createElement('div'), stack = [root];
+  const re = /<!--[\s\S]*?-->|<\/[a-zA-Z][\w:-]*\s*>|<([a-zA-Z][\w:-]*)([^>]*)>|[^<]+/g;
+  let m;
+  while ((m = re.exec(html))) {
+    const tok = m[0], parent = stack[stack.length - 1];
+    if (tok.startsWith('<!--')) continue;
+    if (tok.startsWith('</')) { if (stack.length > 1) stack.pop(); continue }
+    if (tok.startsWith('<')) {
+      const el = doc.createElement(m[1]);
+      parseAttrs(m[2].replace(/\/\s*$/, ''), el);
+      parent.appendChild(el);
+      if (!VOID.has(m[1].toLowerCase()) && !/\/\s*$/.test(m[2])) stack.push(el);
+      continue;
+    }
+    parent.appendChild(new TextN(tok));
+  }
+  return [...root.childNodes];
+}
+function serialize(el) {
+  if (el.nodeType === 3) return el.nodeValue;
+  const name = el.tag.toLowerCase();
+  let out = '<' + name;
+  for (const [k, v] of Object.entries(el.attrs)) out += ' ' + k + '="' + String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"';
+  if (VOID.has(name)) return out + '>';
+  return out + '>' + el.childNodes.map(serialize).join('') + '</' + name + '>';
+}
+class TextN { constructor(v) { this.nodeType = 3; this.nodeValue = v; this.parent = null } }
+const VOID = new Set(['br','img','hr','input','meta','link']);
+function parseSimple(sel) {
+  const m = /^([a-zA-Z][\w:-]*)?(#[\w-]+)?((?:\.[A-Za-z_][\w-]*)*)(\[([^\]]+)\])?$/.exec(sel);
+  if (!m) throw new Error('unsupported selector: ' + sel);
+  let attr, attrVal, hasVal = false;
+  if (m[5]) {
+    const am = /^([^\s=]+)(?:=(?:"([^"]*)"|'([^']*)'|(\S+)))?$/.exec(m[5]);
+    attr = am[1];
+    if (am[2] != null || am[3] != null || am[4] != null) { hasVal = true; attrVal = am[2] ?? am[3] ?? am[4] }
+  }
+  return { tag: m[1] ? m[1].toLowerCase() : '', id: m[2] ? m[2].slice(1) : '', classes: m[3] ? m[3].slice(1).split('.').filter(Boolean) : [], attr, hasVal, attrVal };
+}
+function matchSimple(el, sel) {
+  if (el.nodeType !== 1) return false;
+  const p = parseSimple(sel);
+  if (p.tag && el.tag.toLowerCase() !== p.tag) return false;
+  if (p.id && el.attrs.id !== p.id) return false;
+  const cls = el.className.split(/\s+/);
+  for (const c of p.classes) if (!cls.includes(c)) return false;
+  if (p.attr) {
+    if (!el.hasAttribute(p.attr)) return false;
+    if (p.hasVal && el.getAttribute(p.attr) !== p.attrVal) return false;
+  }
+  return true;
+}
+function qsa(root, sel) {
+  const parts = sel.trim().split(/\s+/);
+  const walk = (n, fn) => { if (n.childNodes) for (const c of n.childNodes) { fn(c); walk(c, fn) } };
+  let set = [];
+  walk(root, n => { if (n.nodeType === 1 && matchSimple(n, parts[0])) set.push(n) });
+  for (const part of parts.slice(1)) {
+    const next = [];
+    for (const n of set) walk(n, c => { if (c.nodeType === 1 && matchSimple(c, part)) next.push(c) });
+    set = next;
+  }
+  return set;
+}
+class El {
+  constructor(tag) {
+    this.tag = tag; this.nodeType = 1; this.childNodes = []; this.parent = null;
+    this._class = ''; this.style = {}; this.attrs = {};
+  }
+  get tagName() { return this.tag.toUpperCase() }
+  get parentNode() { return this.parent }
+  get children() { return this.childNodes.filter(n => n.nodeType === 1) }
+  get className() { return this._class }
+  set className(v) { this._class = v; if (v) this.attrs.class = v; else delete this.attrs.class }
+  get classList() {
+    const el = this, has = c => el.className.split(/\s+/).includes(c);
+    const set = (c, on) => { const k = el.className.split(/\s+/).filter(x => x && x !== c); if (on) k.push(c); el.className = k.join(' ') };
+    return { contains: has, add: c => set(c, true), remove: c => set(c, false), toggle(c, on) { if (on === undefined) on = !has(c); set(c, on) } };
+  }
+  get dataset() {
+    const el = this;
+    return new Proxy({}, {
+      get(_, k) { const name = 'data-' + k.replace(/[A-Z]/g, ch => '-' + ch.toLowerCase()); return el.getAttribute(name) ?? '' },
+      set(_, k, v) { const name = 'data-' + k.replace(/[A-Z]/g, ch => '-' + ch.toLowerCase()); el.setAttribute(name, v); return true }
+    });
+  }
+  get hidden() { return this.hasAttribute('hidden') }
+  set hidden(v) { if (v) this.setAttribute('hidden', ''); else this.removeAttribute('hidden') }
+  get nextElementSibling() {
+    if (!this.parent) return null;
+    const els = this.parent.children, i = els.indexOf(this);
+    return i >= 0 ? els[i + 1] || null : null;
+  }
+  get previousElementSibling() {
+    if (!this.parent) return null;
+    const els = this.parent.children, i = els.indexOf(this);
+    return i > 0 ? els[i - 1] : null;
+  }
+  setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'class') this._class = String(v) }
+  getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null }
+  hasAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) }
+  removeAttribute(k) { delete this.attrs[k]; if (k === 'class') this._class = '' }
+  set innerHTML(h) { this.childNodes.slice().forEach(n => this.removeChild(n)); for (const n of parseHTML(h, doc)) this.appendChild(n) }
+  get innerHTML() { return this.childNodes.map(serialize).join('') }
+  appendChild(n) { if (n.parent) n.parent.removeChild(n); n.parent = this; this.childNodes.push(n); return n }
+  removeChild(n) { const i = this.childNodes.indexOf(n); if (i < 0) throw new Error('not a child'); this.childNodes.splice(i, 1); n.parent = null; return n }
+  querySelector(sel) { return qsa(this, sel)[0] || null }
+  querySelectorAll(sel) { return qsa(this, sel) }
+  matches(sel) { return matchSimple(this, sel) }
+  closest(sel) { for (let n = this; n && n.nodeType === 1; n = n.parent) if (n.matches(sel)) return n; return null }
+  scrollIntoView() {}
+}
+const doc = { createElement: t => new El(t) };
+const host = new El('div');
+host.innerHTML = '<div class="chat-main"><div class="chat-log" id="chatLog"></div></div>';
+const $ = (s, r) => (r || host).querySelector(s);
+const $$ = (s, r) => [...(r || host).querySelectorAll(s)];
+const stubs = [line(/^const esc\s*=/), line(/^const fileUrl\s*=/), "const ico = n => '<svg>' + n + '</svg>';", 'const clock = t => String(t);',
+  "const here = () => '#/ask';", 'const localStorage = { getItem: () => null, setItem() {} };', 'const addEventListener = () => {};'].join('\n');
+const src = chat.replace('return { page, count };',
+  'return { page, count, renderLog, setChat(c) { cur = c }, typeOf(i) { return (cur.messages[i] && cur.messages[i].srcType) || ""; } };');
+if (src === chat) throw new Error('chat.js no longer ends with return { page, count }');
+globalThis.__lbDoc = doc; globalThis.__lbQ = $; globalThis.__lbQQ = $$;
+const api = new Function(stubs + '\nconst document = globalThis.__lbDoc, $ = globalThis.__lbQ, $$ = globalThis.__lbQQ;\n' + src + '\nreturn Chat;')();
+
+function msgEl(i) { return $('#m' + i) }
+function snap() {
+  return $$('.msg.bot', $('#chatLog')).map(msg => {
+    const i = +(msg.getAttribute('id') || '').replace(/^m/, '');
+    const filter = msg.querySelector('.srcfilter');
+    const pressed = filter && $$('button', filter).find(b => b.getAttribute('aria-pressed') === 'true');
+    return {
+      i,
+      srcType: api.typeOf(i),
+      pressed: pressed ? pressed.dataset.type : null,
+      buttons: filter ? $$('button', filter).map(b => [b.dataset.type, b.getAttribute('aria-pressed')]) : [],
+      cards: $$('.srccard', msg).map(c => ({ key: c.getAttribute('id'), type: c.dataset.type, hidden: !!c.hidden })),
+    };
+  });
+}
+
+const PAGE = { kind: 'pdf', key: 'S1', title: 'Emergency water supplies', doc_id: 'w', page: 3 };
+const VIDEO = { kind: 'video', key: 'S2', title: 'Boiling water', doc_id: 'v', t: 30 };
+const VIDEO2 = { kind: 'video', key: 'S3', title: 'A second video', doc_id: 'v2', t: 10 };
+const cited = [PAGE, VIDEO, VIDEO2];
+let chatState;
+
+const out = [];
+for (const step of JSON.parse(process.argv[3])) {
+  if (step.op === 'start') {
+    chatState = {
+      id: 'c1', title: 'Water',
+      messages: [
+        { role: 'user', content: 'How do I purify water?' },
+        { role: 'assistant', content: step.content || 'Use a filter [S1] or watch [S2].', cited: step.cited || cited },
+      ],
+    };
+    api.setChat(chatState);
+    api.renderLog();
+  } else if (step.op === 'filter') {
+    const i = step.i ?? 1;
+    const btn = $$('button', msgEl(i).querySelector('.srcfilter')).find(b => b.dataset.type === step.type);
+    if (!btn) throw new Error('no filter button for ' + step.type);
+    btn.onclick();
+  } else if (step.op === 'cite') {
+    const i = step.i ?? 1;
+    const a = $$('a.cite', msgEl(i)).find(c => c.dataset.key === step.key);
+    if (!a) throw new Error('no citation ' + step.key);
+    a.onclick({ preventDefault() {} });
+  } else if (step.op === 'followup') {
+    chatState.messages.push({ role: 'user', content: step.question || 'What about storage?' });
+    chatState.messages.push({ role: 'assistant', content: step.content || 'Store it clean [S4].', cited: step.cited || [{ kind: 'pdf', key: 'S4', title: 'Storage', doc_id: 's', page: 1 }, { kind: 'video', key: 'S5', title: 'Cans', doc_id: 'c', t: 4 }] });
+    api.renderLog();
+  } else throw new Error('unknown op ' + step.op);
+  out.push(snap());
+}
+process.stdout.write(JSON.stringify(out));
+"""
+
+
 @unittest.skipUnless(NODE, 'needs Node')
 class SourceFilter(unittest.TestCase):
     def filters(self, lists):
@@ -464,6 +653,43 @@ class SourceFilter(unittest.TestCase):
     def test_an_encyclopedia_row_without_a_kind_counts_as_an_encyclopedia(self):
         p = self.parse(self.filters([[{'key': 'S1', 'zim': f'zim/{ZIM}/X'}, {'kind': 'pdf', 'key': 'S2'}]])[0])
         self.assertEqual([a['data-type'] for a, _ in p.buttons], ['', 'page', 'wiki'])
+
+    def run_act(self, actions):
+        r = subprocess.run([NODE, '-e', FILTER_ACT, str(ROOT / 'web/chat.js'), str(ROOT / 'web/app.js'), json.dumps(actions)],
+                           capture_output=True, text=True, check=True, encoding='utf-8')
+        return json.loads(r.stdout)
+
+    def test_clicking_a_hidden_citation_reveals_its_card(self):
+        start, videos, revealed = self.run_act([
+            {'op': 'start'},
+            {'op': 'filter', 'type': 'video'},
+            {'op': 'cite', 'key': 'S1'},
+        ])
+        self.assertEqual(start[0]['pressed'], '')
+        self.assertEqual(videos[0]['pressed'], 'video')
+        self.assertEqual(videos[0]['srcType'], 'video')
+        self.assertEqual([c['hidden'] for c in videos[0]['cards']], [True, False, False])
+        self.assertEqual(revealed[0]['pressed'], '')
+        self.assertEqual(revealed[0]['srcType'], '')
+        self.assertFalse(any(c['hidden'] for c in revealed[0]['cards']))
+        self.assertEqual(revealed[0]['cards'][0]['key'], 'src-S1')
+
+    def test_a_follow_up_keeps_the_videos_filter_on_the_earlier_answer(self):
+        start, videos, after = self.run_act([
+            {'op': 'start'},
+            {'op': 'filter', 'type': 'video'},
+            {'op': 'followup'},
+        ])
+        self.assertEqual(videos[0]['pressed'], 'video')
+        self.assertEqual(len(after), 2)
+        first, second = after
+        self.assertEqual(first['i'], 1)
+        self.assertEqual(first['pressed'], 'video')
+        self.assertEqual(first['srcType'], 'video')
+        self.assertEqual([c['hidden'] for c in first['cards']], [True, False, False])
+        self.assertEqual(second['i'], 3)
+        self.assertEqual(second['pressed'], '')
+        self.assertFalse(any(c['hidden'] for c in second['cards']))
 
 
 FINISH = r"""
