@@ -17,6 +17,10 @@ KINDS = {'general', 'ambulance', 'fire', 'police', 'poison', 'crisis', 'other'}
 HOW = {'call', 'sms', 'chat', 'app'}
 WORKS_FROM = {'mobile', 'landline', 'voip'}
 VERIFIED = {'official', 'found_online'}
+COUNTRY_KEYS = {'country', 'code', 'calling_code', 'general', 'services'}
+SERVICE_KEYS = {'kind', 'name', 'number', 'how', 'works_from', 'works_from_source', 'free', 'free_source', 'keywords',
+                'when', 'source', 'url', 'area_whole_country', 'area', 'checked_on', 'verified'}
+LANG = re.compile(r'[a-z]{2,3}$')   # language code of a keyword list: es, en, qu, ay, gn ...
 NUMBER = re.compile(r'^[+*]?[0-9][0-9 ]*$')
 CALLING_CODE = re.compile(r'^\+[0-9]{1,4}$')
 SOURCE = re.compile(r'^https?://[^\s/]+\.[^\s/]+\S*$')
@@ -25,7 +29,7 @@ SOURCE = re.compile(r'^https?://[^\s/]+\.[^\s/]+\S*$')
 # The last day a number in content/emergency/ may be dated. The real files are checked against this day, not against the
 # computer's clock, so the result is the same on every machine and every day, even where the clock or the time zone is
 # off. Whoever adds or re-checks a number sets it to that day, in the same change. A row dated after it fails.
-REFERENCE_DATE = date(2026, 11, 22)
+REFERENCE_DATE = date(2026, 11, 24)
 
 
 def latest_checked_date(now=None):
@@ -53,6 +57,8 @@ def problems(data, name, latest=None):
     code = name[:-5] if name.endswith('.json') else name
     if not re.fullmatch(r'[A-Z]{2}', code):
         out.append(f'{name}: the file name must be the two-letter country code in capitals, such as CL.json')
+    for key in sorted(set(data) - COUNTRY_KEYS):
+        out.append(f'{name}: unknown key {key!r} (a typo? the allowed keys are in SCHEMA.md)')
     if data.get('code') != code:
         out.append(f'{name}: "code" is {data.get("code")!r}, but the file name says {code!r}')
     if not isinstance(data.get('country'), str) or not data['country'].strip():
@@ -75,6 +81,8 @@ def problems(data, name, latest=None):
         n = s.get('number')
         if not isinstance(n, str) or not NUMBER.match(n):
             out.append(f'{who}: "number" must be digits and spaces only (a leading + or * is allowed): {n!r}')
+        elif n in numbers:
+            out.append(f'{who}: "number" {n} is listed twice in this file')
         else:
             numbers.add(n)
         v = s.get('how')
@@ -84,18 +92,34 @@ def problems(data, name, latest=None):
         if not isinstance(v, list) or not set(v) <= WORKS_FROM:
             out.append(f'{who}: "works_from" must be a list from {sorted(WORKS_FROM)}, empty if the source does not say')
         k = s.get('keywords')
-        if not isinstance(k, dict) or not words(k.get('local')) or not words(k.get('en')):
-            out.append(f'{who}: "keywords" needs lower-case "local" and "en" word lists')
+        if (not isinstance(k, dict) or not words(k.get('en')) or len(k) < 2
+                or not all(isinstance(c, str) and LANG.match(c) and words(w) for c, w in k.items())):
+            out.append(f'{who}: "keywords" must map language codes to lower-case word lists, with "en" and at least one local language')
+        for key in sorted(set(s) - SERVICE_KEYS):
+            out.append(f'{who}: unknown key {key!r} (a typo? the allowed keys are in SCHEMA.md)')
+        if 'area_whole_country' in s and not isinstance(s['area_whole_country'], bool):
+            out.append(f'{who}: "area_whole_country" is optional, but when present it must be true or false')
+        if 'area' in s and (not isinstance(s['area'], str) or not s['area'].strip()):
+            out.append(f'{who}: "area" is optional, but when present it must be the specific place the number covers')
+        elif 'area' in s and s.get('area_whole_country') is True:
+            out.append(f'{who}: "area_whole_country" is true, so there is no specific "area"; leave "area" out')
+        if 'url' in s and not source(s['url']):
+            out.append(f'{who}: "url" is optional, but when present it must be the web address of the service\'s own page')
         # Each claim about how the number can be reached has its own source, so an editor can check it alone.
         if s.get('works_from') and not source(s.get('works_from_source')):
             out.append(f'{who}: "works_from" is listed, so "works_from_source" must be the address of the page that says so')
+        if not s.get('works_from') and s.get('works_from_source') is not None:
+            out.append(f'{who}: "works_from" is empty (unknown), so leave "works_from_source" out')
         if 'free' not in s or s['free'] not in (True, False, None):
             out.append(f'{who}: "free" must be true, false or null (null: the sources do not say)')
         elif s['free'] is not None and not source(s.get('free_source')):
             out.append(f'{who}: "free" is {str(s["free"]).lower()}, so "free_source" must be the address of the page that says so')
+        elif s['free'] is None and s.get('free_source') is not None:
+            out.append(f'{who}: "free" is null (unknown), so leave "free_source" out')
         if not isinstance(s.get('when'), str):
             out.append(f'{who}: "when" must be a string (empty if there is nothing to add)')
-        if not source(s.get('source')):
+        src = s.get('source')
+        if not (source(src) or (isinstance(src, list) and src and all(source(x) for x in src))):
             out.append(f'{who}: "source" must be the web address of the page the number was read from')
         c = s.get('checked_on')
         try:
@@ -146,7 +170,7 @@ class Checker(unittest.TestCase):
         'country': 'Springfield', 'code': 'ZZ', 'calling_code': '+99', 'general': '911',
         'services': [{
             'kind': 'general', 'name': 'Emergency', 'number': '911', 'how': ['call'],
-            'works_from': ['mobile', 'landline'], 'keywords': {'local': ['emergencia'], 'en': ['emergency']},
+            'works_from': ['mobile', 'landline'], 'keywords': {'es': ['emergencia'], 'en': ['emergency']},
             'works_from_source': 'https://example.org/dialling', 'free': True, 'free_source': 'https://example.org/costs',
             'when': '', 'source': 'https://example.org/numbers', 'checked_on': '2026-11-01', 'verified': 'official'}],
     }
@@ -210,6 +234,11 @@ class Checker(unittest.TestCase):
         del d['services'][0]['free']
         self.assertTrue(problems(d, 'ZZ.json'))
 
+    def test_a_claim_left_unknown_must_not_keep_its_source(self):
+        # Clearing the claim but leaving the address behind: the source would now back nothing.
+        self.assertTrue(self.bad(s_works_from=[]))
+        self.assertTrue(self.bad(s_free=None))
+
     def test_a_claim_left_unknown_needs_no_source(self):
         self.assertFalse(self.bad(s_works_from=[], s_works_from_source=None, s_free=None, s_free_source=None))
         self.assertFalse(self.bad(s_free=False))
@@ -220,7 +249,7 @@ class Checker(unittest.TestCase):
         self.assertTrue(self.bad(s_how=['pigeon']))
         self.assertTrue(self.bad(s_works_from=['telepathy']))
         self.assertTrue(self.bad(s_how=[]))
-        self.assertFalse(self.bad(s_works_from=[]))
+        self.assertFalse(self.bad(s_works_from=[], s_works_from_source=None))
 
     def test_the_file_name_must_match_the_code(self):
         self.assertTrue(problems(self.GOOD, 'zz.json', latest=date(2026, 11, 22)))
@@ -229,9 +258,43 @@ class Checker(unittest.TestCase):
     def test_general_must_be_a_listed_number(self):
         self.assertTrue(self.bad(general='112'))
 
-    def test_keywords_need_both_languages_in_lower_case(self):
-        self.assertTrue(self.bad(s_keywords={'local': ['Emergencia'], 'en': ['emergency']}))
-        self.assertTrue(self.bad(s_keywords={'local': ['emergencia']}))
+    def test_keywords_are_tagged_by_language_and_lower_case(self):
+        self.assertFalse(self.bad(s_keywords={'es': ['emergencia'], 'qu': ['ratu'], 'en': ['emergency']}))
+        self.assertTrue(self.bad(s_keywords={'es': ['Emergencia'], 'en': ['emergency']}))   # upper case
+        self.assertTrue(self.bad(s_keywords={'es': ['emergencia']}))                        # no English
+        self.assertTrue(self.bad(s_keywords={'en': ['emergency']}))                         # no local language
+        self.assertTrue(self.bad(s_keywords={'local': ['emergencia'], 'en': ['emergency']}))  # "local" is not a language
+        self.assertTrue(self.bad(s_keywords={'es': [], 'en': ['emergency']}))
+
+    def test_a_typo_in_a_key_fails(self):
+        self.assertTrue(self.bad(s_works_form=['mobile']))
+        self.assertTrue(self.bad(countri='Chile'))
+
+    def test_a_number_listed_twice_fails(self):
+        d = copy.deepcopy(self.GOOD)
+        d['services'].append(copy.deepcopy(d['services'][0]))
+        self.assertTrue(problems(d, 'ZZ.json', latest=date(2026, 11, 22)))
+
+    def test_source_may_be_one_address_or_a_list_of_addresses(self):
+        self.assertFalse(self.bad(s_source=['https://example.org/a', 'https://example.org/b']))
+        for v in ([], ['not an address'], ['https://example.org/a', ''], None):
+            self.assertTrue(self.bad(s_source=v), v)
+
+    def test_area_whole_country_is_yes_or_no_and_area_is_a_specific_place(self):
+        self.assertFalse(self.bad(s_area_whole_country=True))
+        self.assertFalse(self.bad(s_area_whole_country=False, s_area='Comuna de San Miguel'))
+        self.assertFalse(self.bad(s_area='Comuna de San Miguel'))
+        for v in ('yes', 1, None):
+            self.assertTrue(self.bad(s_area_whole_country=v), v)
+        for v in ('', '  ', None, 5):
+            self.assertTrue(self.bad(s_area=v), v)
+        self.assertTrue(self.bad(s_area_whole_country=True, s_area='Comuna de San Miguel'))   # contradiction
+
+    def test_url_is_optional_but_must_be_an_address(self):
+        self.assertFalse(self.bad())
+        self.assertFalse(self.bad(s_url='https://example.org/service'))
+        for v in ('', None, 'not an address', 5):
+            self.assertTrue(self.bad(s_url=v), v)
 
 
 if __name__ == '__main__':

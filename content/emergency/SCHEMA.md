@@ -23,7 +23,8 @@ what to show when the country is unknown are still being discussed in the issue.
       "works_from_source": "https://example.gov/dialling-rules",
       "free": true,
       "free_source": "https://example.gov/costs",
-      "keywords": {"local": ["ambulancia", "samu"], "en": ["ambulance"]},
+      "url": "https://example.gov/samu",
+      "keywords": {"es": ["ambulancia", "samu"], "en": ["ambulance"]},
       "when": "Free-text note: when to use this number, or where it applies.",
       "source": "https://example.gov/page",
       "checked_on": "2026-11-21",
@@ -52,12 +53,15 @@ what to show when the country is unknown are still being discussed in the issue.
 | `number` | Digits, spaces, and a leading `+` or `*` only, as it is dialled. |
 | `how` | One or more of `call`, `sms`, `chat`, `app`. |
 | `works_from` | Any of `mobile`, `landline`, `voip`. List only what a source says; empty when the source does not say. |
-| `keywords` | `{"local": [...], "en": [...]}`: words a person might type to find this service, in the local language and in English ("bomberos" / "fire"). Lower case. |
+| `keywords` | Language code (2 or 3 lower-case letters: `es`, `qu`, `ay`) to a list of words a person might type to find this service ("bomberos" / "fire"). `en` is required, plus at least one local language; a country with several official languages lists each one. Lower case. |
+| `area_whole_country` | Optional. `true` (yes) when a source says the number covers the whole country, `false` (no) when a source says it does not. Leave it out when no source says. |
+| `area` | Optional, and only when `area_whole_country` is not `true`. The specific place the number covers, in free text (a comuna, a city). Numbers that belong to one comuna, such as the 1XXX municipal lines, need it. Leave it out when no source says. |
+| `url` | Optional. The web address of the service's own page, where a person can read more. It is not evidence for any claim (the `*_source` fields are); leave it out when the service has no page of its own. |
 | `works_from_source` | The page that says `works_from`. Required when `works_from` is not empty; leave it out otherwise. |
 | `free` | `true` or `false` when a source says whether a call costs money, `null` when none does. Always present. |
 | `free_source` | The page that says `free`. Required when `free` is not `null`; leave it out otherwise. |
 | `when` | A free-text note, in English: when this number is the right one and where it applies. Empty string if there is nothing to add. |
-| `source` | The web address of the page the number and its name were read from. A country's own government or the service's own page. |
+| `source` | The web address of the page the number and its name were read from. A country's own government or the service's own page. A list of addresses when more than one page backs the row (a numbering resolution and the decree that created the service). |
 | `checked_on` | `YYYY-MM-DD`, the day someone read the number on that page. Not in the future. |
 | `verified` | `official`: seen on an official page. `found_online`: only found elsewhere. The app labels `found_online` numbers as unverified. |
 
@@ -66,10 +70,14 @@ what to show when the country is unknown are still being discussed in the issue.
 Each claim has its own source, so an editor can check one claim without the others: `source` for the number and its
 name, `works_from_source` for where it can be dialled from, `free_source` for the cost. A claim no page backs is left
 unknown (`works_from: []`, `free: null`), never filled in from memory. The sources may be different pages: in
-`CL.json`, 130 to 134 and 137 are read in Subtel's numbering appendix (Resolución 1534), the dialling in Decreto 747
-art. 15 and the cost in Decreto 18 art. 21. `when` holds only what a person needs to know; it does not carry the legal
+`CL.json`, 130 to 134 and 136 to 138 are read in Subtel's numbering appendix (Resolución 1534), the dialling in
+Decreto 747 art. 15 and the cost in Decreto 18 art. 21; 147 and 1455 are in the same appendix, but no source says how
+they can be dialled or whether they are free, so those stay unknown. `when` holds only what a person needs to know; it does not carry the legal
 basis. It stays within what the row's cited pages say: advice such as "call another service first" goes in only with
 a source of its own.
+
+A key that is not in this document fails the test (a typo such as `works_form` would otherwise pass unnoticed), and so
+does the same `number` listed twice in one file.
 
 A service whose `source` could not be reached is not added. A number nobody can source stays out of the table.
 
