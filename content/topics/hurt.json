@@ -375,6 +375,7 @@
    "id": "animal-bite",
    "label": "Animal or human bite",
    "hint": "Dog, cat, bat or monkey bite, bitten by a person, rabies worry",
+   "phrases": ["rat bite", "rat bites", "rat bit", "rats bit", "bitten by a rat", "rodent bite"],
    "read": [
     {
      "doc": "med-2e83e22162a9a006",
