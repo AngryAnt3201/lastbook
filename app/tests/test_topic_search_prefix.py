@@ -14,6 +14,10 @@ This module keeps both lists side by side, so a change to the matching or the ra
                   that search goes back to its wrong result. A guide PR that fixes a row does not have to touch
                   this file; the report then shows the row as "fixed", and whoever merges it can drop it from
                   KNOWN to pin the fix.
+                  Each row also says which first results would be right, where that is clear from the guides.
+                  A row is "fixed" only when its first result is one of those. Any other new first result,
+                  and every new result of a row with no clear answer, is "changed": it left one wrong result
+                  and nobody has judged the new one. "changed" never counts as fixed.
   KEEP            searches that depend on a short word starting a longer one, and must keep their first result.
 
 This is a test only: no search code is touched. The searches run through `web/words.js` `rankTopics`, the
@@ -31,31 +35,33 @@ TOPICS = [json.loads(p.read_text(encoding='utf-8')) for p in sorted((ROOT / 'con
 QSTOP = re.search(r"const QSTOP = new Set\('([^']*)'\.split", (ROOT / 'web' / 'app.js').read_text(encoding='utf-8')).group(1).split(' ')
 
 # upstream/main when these were measured. Re-measure on a new main and record the new one.
-BASELINE = '6dd3080'
+BASELINE = '0fae169'
 
-#   (search, the unrelated first result it gets on BASELINE, the short word and the longer word it starts)
+#   (search, the unrelated first result it gets on BASELINE, the first results that would be right, the short word
+#    and the longer word it starts). The right results are choices that name the subject in their own label or hint
+#    on BASELINE; () where the guides give no clear answer, so any new result is reported as "changed".
 FALSE_MATCHES = [
-    ('stomach pain', ['grow', 'soil-unknown'], 'pain / paint ("lead paint")'),
-    ('left arm pain', ['grow', 'soil-unknown'], 'pain / paint'),
-    ('fall from ladder', ['disaster', 'nuclear-explosion'], 'fall / fallout'),
-    ('elderly fall', ['disaster', 'nuclear-explosion'], 'fall / fallout'),
-    ('want to die', ['food', 'special'], 'die / diets'),
-    ('the loo wont flush', ['hurt', 'bone'], 'loo / looks ("looks bent")'),
-    ('rat bite', ['hurt', 'snakebite'], 'rat / rattlesnake'),
-    ('rat poison', ['hurt', 'snakebite'], 'rat / rattlesnake'),
-    ('ear infection', ['disaster', 'earthquake-now'], 'ear / earthquake'),
-    ('head lice', ['comms', 'ham'], 'lice / license'),
-    ('bat in house', ['power', 'batteries-solar'], 'bat / batteries'),
-    ('car stuck in snow', ['hurt', 'breathing'], 'car / cardiac, with stuck from "food stuck in throat"'),
-    ('war', ['shelter', 'cold'], 'war / warm'),
-    ('what to pack', ['disaster', 'explosion'], 'pack / package ("suspicious package")'),
-    ('out of formula', ['food', 'outage'], 'out / outage'),
-    ('ran out of insulin', ['food', 'outage'], 'out / outage'),
-    ('high fever', ['disaster', 'highrise-fire'], 'high / high-rise'),
+    ('stomach pain', ['grow', 'soil-unknown'], (['health', 'start'], ['hurt', 'diarrhea']), 'pain / paint ("lead paint")'),
+    ('left arm pain', ['grow', 'soil-unknown'], (['health', 'start'], ['hurt', 'sudden']), 'pain / paint'),
+    ('fall from ladder', ['disaster', 'nuclear-explosion'], (['hurt', 'bone'], ['hurt', 'head']), 'fall / fallout'),
+    ('elderly fall', ['disaster', 'nuclear-explosion'], (['hurt', 'bone'], ['hurt', 'head']), 'fall / fallout'),
+    ('want to die', ['food', 'special'], (['health', 'mind'],), 'die / diets'),
+    ('the loo wont flush', ['hurt', 'bone'], (['sanitation', 'noflush'],), 'loo / looks ("looks bent")'),
+    ('rat bite', ['hurt', 'snakebite'], (['hurt', 'animal-bite'],), 'rat / rattlesnake'),
+    ('rat poison', ['hurt', 'snakebite'], (), 'rat / rattlesnake; someone poisoned, or rats to get rid of'),
+    ('ear infection', ['disaster', 'earthquake-now'], (), 'ear / earthquake'),
+    ('head lice', ['comms', 'ham'], (), 'lice / license'),
+    ('bat in house', ['power', 'batteries-solar'], (), 'bat / batteries'),
+    ('car stuck in snow', ['hurt', 'breathing'], (), 'car / cardiac, with stuck from "food stuck in throat"'),
+    ('war', ['shelter', 'cold'], (), 'war / warm'),
+    ('what to pack', ['disaster', 'explosion'], (), 'pack / package ("suspicious package"); no packing choice on BASELINE'),
+    ('out of formula', ['food', 'outage'], (['food', 'special'],), 'out / outage'),
+    ('ran out of insulin', ['food', 'outage'], (['health', 'chronic'],), 'out / outage'),
+    ('high fever', ['disaster', 'highrise-fire'], (['health', 'start'],), 'high / high-rise'),
 ]
 # The false matches still present on BASELINE. Taking a row out of here pins its fix; nothing is ever added
 # without a new row above and a reason.
-KNOWN = {q for q, _, _ in FALSE_MATCHES}
+KNOWN = {q for q, _, _, _ in FALSE_MATCHES}
 
 #   (search, the first result that must hold, the short word and the longer word it relies on)
 KEEP = [
@@ -70,7 +76,7 @@ KEEP = [
     ('gen', ['power', 'generator'], 'a word half typed: gen / generator'),
 ]
 
-CASES = {'stop': QSTOP, 'topics': TOPICS, 'questions': [q for q, _, _ in FALSE_MATCHES] + [q for q, _, _ in KEEP]}
+CASES = {'stop': QSTOP, 'topics': TOPICS, 'questions': [q for q, _, _, _ in FALSE_MATCHES] + [q for q, _, _ in KEEP]}
 
 
 def run():
@@ -90,6 +96,11 @@ def first(result):
     return [top[0], top[1]] if top else None
 
 
+def state(got, bad, right):
+    """A recorded false match now: 'still' on its wrong result, 'fixed' on a result listed as right, else 'changed'."""
+    return 'still' if got == bad else 'fixed' if got in [list(r) for r in right] else 'changed'
+
+
 @unittest.skipUnless(NODE, 'needs node on PATH')
 class TopicSearchPrefix(unittest.TestCase):
     @classmethod
@@ -97,8 +108,35 @@ class TopicSearchPrefix(unittest.TestCase):
         cls.got = dict(zip(CASES['questions'], (first(r) for r in run())))
 
     def test_false_matches_only_shrink(self):
-        still = {q for q, bad, _ in FALSE_MATCHES if self.got[q] == bad}
+        still = {q for q, bad, _, _ in FALSE_MATCHES if self.got[q] == bad}
         self.assertLessEqual(still, KNOWN, 'a false match that was fixed is back')
+
+    def test_a_row_out_of_known_is_fixed_not_changed(self):
+        # Taking a row out of KNOWN pins a fix, so the row needs a right result and must be on it.
+        for q, bad, right, why in FALSE_MATCHES:
+            if q not in KNOWN:
+                with self.subTest(q=q, why=why):
+                    self.assertEqual(state(self.got[q], bad, right), 'fixed')
+
+    def test_changed_is_never_fixed(self):
+        # One wrong result swapped for another, or for no result, is "changed"; so is any new result of a row
+        # with no right result listed. Only a listed result is "fixed".
+        bad, right = ['grow', 'soil-unknown'], (['health', 'start'], ['hurt', 'diarrhea'])
+        self.assertEqual(state(bad, bad, right), 'still')
+        self.assertEqual(state(['hurt', 'diarrhea'], bad, right), 'fixed')
+        self.assertEqual(state(['repair', 'build'], bad, right), 'changed')
+        self.assertEqual(state(['health', None], bad, right), 'changed')
+        self.assertEqual(state(None, bad, right), 'changed')
+        self.assertEqual(state(['health', 'start'], bad, ()), 'changed')
+        self.assertEqual(state(bad, bad, ()), 'still')
+
+    def test_right_results_are_real_choices_and_not_the_wrong_one(self):
+        choices = {(t['id'], c['id']) for t in TOPICS for c in t.get('choices', [])}
+        for q, bad, right, _ in FALSE_MATCHES:
+            with self.subTest(q=q):
+                self.assertNotIn(bad, [list(r) for r in right])
+                for r in right:
+                    self.assertIn(tuple(r), choices)
 
     def test_useful_prefix_matches_keep_working(self):
         for q, want, why in KEEP:
@@ -110,13 +148,18 @@ def report():
     got = dict(zip(CASES['questions'], (first(r) for r in run())))
     print(f'baseline: {BASELINE}')
     print('\nFalse matches (first result comes from an unrelated longer word)')
-    for q, bad, why in FALSE_MATCHES:
-        state = 'still' if got[q] == bad else 'fixed, can leave KNOWN' if q in KNOWN else 'fixed'
-        print(f"  {state}  {q!r}  {got[q]}  ({why})")
+    count = {'still': 0, 'fixed': 0, 'changed': 0}
+    for q, bad, right, why in FALSE_MATCHES:
+        st = state(got[q], bad, right)
+        count[st] += 1
+        note = ', can leave KNOWN' if st == 'fixed' and q in KNOWN else ', not judged' if st == 'changed' else ''
+        print(f"  {st}{note}  {q!r}  {got[q]}  ({why})")
     print('\nUseful prefix matches (must keep working)')
     for q, want, why in KEEP:
         print(f"  {'ok   ' if got[q] == want else 'MOVED'}  {q!r}  {got[q]}  ({why})")
-    print(f'\nfalse matches still present: {sum(got[q] == bad for q, bad, _ in FALSE_MATCHES)} of {len(FALSE_MATCHES)}')
+    print(f"\nfalse matches of {len(FALSE_MATCHES)}: {count['still']} still, {count['fixed']} fixed, "
+          f"{count['changed']} changed (not judged)")
+    print(f"useful matches kept: {sum(got[q] == want for q, want, _ in KEEP)} of {len(KEEP)}")
 
 
 if __name__ == '__main__':
