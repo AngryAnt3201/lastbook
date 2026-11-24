@@ -20,7 +20,7 @@ VERIFIED = {'official', 'found_online'}
 COUNTRY_KEYS = {'country', 'code', 'calling_code', 'general', 'services'}
 SERVICE_KEYS = {'kind', 'name', 'number', 'how', 'works_from', 'works_from_source', 'free', 'free_source', 'keywords',
                 'when', 'source', 'url', 'area_whole_country', 'area', 'checked_on', 'verified'}
-LANG = re.compile(r'[a-z]{2,3}$')   # language code of a keyword list: es, en, qu, ay, gn ...
+LANG = re.compile(r'[a-z]{2,3}')   # language code of a keyword list: es, en, qu, ay, gn ... (no region: not es-cl)
 NUMBER = re.compile(r'^[+*]?[0-9][0-9 ]*$')
 CALLING_CODE = re.compile(r'^\+[0-9]{1,4}$')
 SOURCE = re.compile(r'^https?://[^\s/]+\.[^\s/]+\S*$')
@@ -93,7 +93,7 @@ def problems(data, name, latest=None):
             out.append(f'{who}: "works_from" must be a list from {sorted(WORKS_FROM)}, empty if the source does not say')
         k = s.get('keywords')
         if (not isinstance(k, dict) or not words(k.get('en')) or len(k) < 2
-                or not all(isinstance(c, str) and LANG.match(c) and words(w) for c, w in k.items())):
+                or not all(isinstance(c, str) and LANG.fullmatch(c) and words(w) for c, w in k.items())):
             out.append(f'{who}: "keywords" must map language codes to lower-case word lists, with "en" and at least one local language')
         for key in sorted(set(s) - SERVICE_KEYS):
             out.append(f'{who}: unknown key {key!r} (a typo? the allowed keys are in SCHEMA.md)')
@@ -265,6 +265,12 @@ class Checker(unittest.TestCase):
         self.assertTrue(self.bad(s_keywords={'en': ['emergency']}))                         # no local language
         self.assertTrue(self.bad(s_keywords={'local': ['emergencia'], 'en': ['emergency']}))  # "local" is not a language
         self.assertTrue(self.bad(s_keywords={'es': [], 'en': ['emergency']}))
+
+    def test_a_keyword_language_with_a_region_fails(self):
+        # The language only: "es", never "es-cl" (one list of Spanish words serves every Spanish-speaking country).
+        for code in ('es-cl', 'es-CL', 'es_cl', 'es-419', 'ES', 'e', 'espa', 'es\n', ''):
+            self.assertTrue(self.bad(s_keywords={code: ['emergencia'], 'en': ['emergency']}), repr(code))
+        self.assertFalse(self.bad(s_keywords={'es': ['emergencia'], 'en': ['emergency']}))
 
     def test_a_typo_in_a_key_fails(self):
         self.assertTrue(self.bad(s_works_form=['mobile']))

@@ -53,7 +53,7 @@ what to show when the country is unknown are still being discussed in the issue.
 | `number` | Digits, spaces, and a leading `+` or `*` only, as it is dialled. |
 | `how` | One or more of `call`, `sms`, `chat`, `app`. |
 | `works_from` | Any of `mobile`, `landline`, `voip`. List only what a source says; empty when the source does not say. |
-| `keywords` | Language code (2 or 3 lower-case letters: `es`, `qu`, `ay`) to a list of words a person might type to find this service ("bomberos" / "fire"). `en` is required, plus at least one local language; a country with several official languages lists each one. Lower case. |
+| `keywords` | Language code only (2 or 3 lower-case letters: `es`, `qu`, `ay`; never a region such as `es-cl`, which the test rejects) to a list of words a person might type to find this service ("bomberos" / "fire"). `en` is required, plus at least one local language; a country with several official languages lists each one. Lower case. |
 | `area_whole_country` | Optional. `true` (yes) when a source says the number covers the whole country, `false` (no) when a source says it does not. Leave it out when no source says. |
 | `area` | Optional, and only when `area_whole_country` is not `true`. The specific place the number covers, in free text (a comuna, a city). Numbers that belong to one comuna, such as the 1XXX municipal lines, need it. Leave it out when no source says. |
 | `url` | Optional. The web address of the service's own page, where a person can read more. It is not evidence for any claim (the `*_source` fields are); leave it out when the service has no page of its own. |
