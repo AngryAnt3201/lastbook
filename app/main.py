@@ -408,6 +408,8 @@ def main():
     if not given or note:
         setup_api.opened(app_folders()[0], data, note)
     setup_api.configure(mode='manage', current=data, **setup_options())
+    import assistant
+    setup_api.follow_model_server(assistant.use_server)   # a model server chosen in Setup (#78)
     from engine import update
     update.configure(app_folders()[0])    # opt-in update notices (off unless turned on); the window asks for the daily check
     import bridge as B

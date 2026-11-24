@@ -21,6 +21,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
+from .. import model_server
 from . import download, hardware, install
 from .manifest import Manifest
 
@@ -186,7 +187,8 @@ class _Item:
 
 class Setup:
     def __init__(self, mode, settings_dir, default_parent, current=None, manifest=None, allowed=None, context=None,
-                 on_finish=None, pick_folder=None, look_for_libraries=None, home=None, llm_local=None, default_why=None):
+                 on_finish=None, pick_folder=None, look_for_libraries=None, home=None, llm_local=None, default_why=None,
+                 on_model_server=None):
         """mode: 'first-run' or 'manage'. current: the open library (manage). on_finish(folder): the app opens that library
         (it relaunches). pick_folder(): a folder the person chose, or None. look_for_libraries(): LastbookData folders found."""
         self.mode, self.current = mode, Path(current) if current else None
@@ -195,8 +197,10 @@ class Setup:
         self.allowed, self.context = allowed, context
         self.on_finish, self.pick_folder, self.look_for_libraries = on_finish, pick_folder, look_for_libraries
         self.default_why = default_why     # why the default folder is not the usual one (a long Windows user folder), for the screen
+        self.on_model_server = on_model_server   # (base, model) or (None, None): the open library's assistant switches at once (manage)
         self._llm = llm_local
         self.lock = threading.RLock()
+        self.choice_lock = threading.Lock()    # one model-server choice at a time: saved and switched in the same order (two windows)
         self.job, self.control, self.thread = None, None, None
         self.sources = {}          # file name -> a file already on this computer the person chose with `use`
         self.ai_measure, self.measuring = None, False
@@ -556,7 +560,43 @@ class Setup:
         self.manifest.fetch_once()
         hw = self.hardware()
         return {'mode': self.mode, 'hardware': hw, 'manifest': self.manifest.public(), 'current': self.current_info(),
-                'found': self.found(), 'recommend': self.recommend(hw), 'job': self.public_job()}
+                'found': self.found(), 'recommend': self.recommend(hw), 'job': self.public_job(), 'model_server': self.model_server()}
+
+    # ------------------------------------------------------------------------- a model server on this computer (#78) --
+    def model_server(self):
+        """The server the person chose, as Setup shows it ({'address', 'model'}), or None. Asks the server nothing."""
+        got = saved_model_server(self.settings_dir)
+        return {'address': model_server.shown(got[0]), 'model': got[1]} if got else None
+
+    def server_models(self, address):
+        """The models of the server at the address the person typed: the one request Setup makes to it before a choice."""
+        return model_server.list_models(address)
+
+    def use_server(self, address, model):
+        got = model_server.list_models(address)
+        if got.get('error'):
+            return got
+        if model not in got['models']:
+            return {'code': 'not_listed', 'error': f'The server at {got["address"]} no longer lists {str(model)[:model_server.MAX_ID]}. List its models again.'}
+        self._choose_server(got['base'], model)
+        return {'model_server': self.model_server()}
+
+    def stop_server(self):
+        self._choose_server(None, None)
+        return {'model_server': None}
+
+    def _choose_server(self, base, model):
+        """Save the choice and switch the open library's assistant as one step, so the last choice to finish wins in both."""
+        with self.choice_lock:
+            with self.lock:
+                s = self._settings()
+                if base:
+                    s['model_server'] = {'base': base, 'model': model}
+                else:
+                    s.pop('model_server', None)
+                self._save_settings(s)
+            if self.on_model_server:
+                self.on_model_server(base, model)
 
     def public_job(self):
         with self.lock:
@@ -1664,6 +1704,26 @@ def opened(settings_dir, data, note):
         pass
 
 
+def saved_model_server(settings_dir):
+    """(base, model) of the model server chosen in Setup, or None: nothing chosen, or a setup.json that no longer holds a loopback address."""
+    try:
+        got = json.loads((Path(settings_dir) / 'setup.json').read_text(encoding='utf-8')).get('model_server')
+        base, model = model_server.loopback_base(got['base']), got['model']
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return None
+    return (base, model) if isinstance(model, str) and 0 < len(model) <= model_server.MAX_ID else None
+
+
+def follow_model_server(use):
+    """The open library's assistant follows the server chosen in Setup: use(base, model) now with the saved one, and on each
+    new choice. A server named when starting Lastbook (SURVIVAL_MODEL_BASE) wins over the saved one until the person chooses again."""
+    s = SETUP or _default()
+    s.on_model_server = use
+    chosen = saved_model_server(s.settings_dir)
+    if chosen and 'SURVIVAL_MODEL_BASE' not in os.environ:
+        use(*chosen)
+
+
 SETUP = None
 
 
@@ -1700,6 +1760,9 @@ ROUTES = {
     ('POST', 'pick'): lambda s, b: s.pick(files=b.get('files') is True),
     ('POST', 'delete-old'): lambda s, b: s.delete_old(b.get('path')),
     ('POST', 'remove-ai'): lambda s, b: s.remove_ai(),
+    ('POST', 'server-models'): lambda s, b: s.server_models(b.get('address')),
+    ('POST', 'use-server'): lambda s, b: s.use_server(b.get('address'), b.get('model')),
+    ('POST', 'stop-server'): lambda s, b: s.stop_server(),
     ('GET', 'updates'): lambda s, b: _updates(),
     ('POST', 'updates'): lambda s, b: _set_update_notice(b.get('notify')),
 }
