@@ -62,9 +62,17 @@ const page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise(r => ws.addEventListener('open', r));
 let n = 0;
-const waiting = {};
-ws.addEventListener('message', e => { const m = JSON.parse(e.data); if (m.id && waiting[m.id]) { waiting[m.id](m); delete waiting[m.id] } });
-const cdp = (method, params = {}) => new Promise(r => { const id = ++n; waiting[id] = r; ws.send(JSON.stringify({ id, method, params })) });
+const waiting = new Map();
+ws.addEventListener('message', e => {
+  const m = JSON.parse(e.data);
+  const id = m && m.id;
+  if (!Number.isSafeInteger(id) || id <= 0) return;
+  const resolve = waiting.get(id);
+  if (typeof resolve !== 'function') return;
+  waiting.delete(id);
+  resolve(m);
+});
+const cdp = (method, params = {}) => new Promise(r => { const id = ++n; waiting.set(id, r); ws.send(JSON.stringify({ id, method, params })) });
 const js = async expr => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result.result.value;
 const until = async (what, test) => { for (let i = 0; i < 200; i++) { if (await test()) return true; await sleep(25) } console.log('FAIL waiting for', what); done(1) };
 
