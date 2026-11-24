@@ -744,10 +744,13 @@ def apply_pending(pend, work):
     note = {'target': str(target), 'old': None, 'model_file': d.get('model_file'), 'model_sha256': d.get('model_sha256')}
     if d.get('kind') == 'map':
         return _apply_map(work, pend, d, target, note)
+    old = d.get('old')
+    if not d.get('switched') and old and Path(old).exists() and not Path(d['new']).exists() and is_library(target):
+        d['switched'] = True       # stopped after the new library went in, before this record said so: the switch is made,
+        _write_json(pend, d)       # and the old library stays where it was recorded, for opened() to keep
     if d.get('switched'):
         lib_ok = is_library(target)
     else:
-        old = d.get('old')
         if not target.exists() and old and Path(old).exists():     # stopped after the old library moved aside: put it back, then start over
             try:
                 if Path(d['new']).is_dir() and is_library(old):     # switch() carries only from a library, so only one gets files back

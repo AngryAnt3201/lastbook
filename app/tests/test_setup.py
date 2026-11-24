@@ -2247,6 +2247,106 @@ class Switching(Base):
         self.assertEqual(note['old'], str(old))
         self.assertTrue(old.is_dir())
 
+    def stopped_after_the_old_library_moved_aside(self):
+        cur, new = self.with_files()
+        pend = api._pending_file(self.settings)
+        d = install.stage_switch(pend, new, cur)
+        old = install.old_name(cur)
+        d['old'] = str(old)
+        install._write_json(pend, d)                       # what was written before the renames
+        install.carry_over(cur, new)
+        os.replace(cur, old)
+        self.failed_switch_settings()
+        return cur, new, pend, old
+
+    def test_switch_that_stopped_after_the_new_library_went_in_is_kept_at_next_start(self):
+        """Review of #195 with #313: both renames were made, but the process stopped before the record said 'switched'. The
+        next start keeps the switch and the recorded old library: no new name for it, and no retries of a switch already made."""
+        cur, new, pend, old = self.stopped_after_the_old_library_moved_aside()
+        os.replace(new, cur)                               # ...and the process stopped here, before the record was written
+        lib, note = api.startup(self.settings)
+        self.assertEqual(lib, cur)
+        self.assertEqual((cur / 'library-data' / 'catalog.json').read_text(), 'new')
+        self.assertTrue((cur / 'models' / 'model.gguf').is_file())
+        self.assertNotIn('error', note)
+        self.assertNotIn('again', note)
+        self.assertEqual(note['old'], str(old))
+        saved = json.loads(pend.read_text())
+        self.assertTrue(saved['switched'])
+        self.assertEqual(saved['old'], str(old))           # the recorded old library, not a fresh name
+        self.assertNotIn('attempts', saved)
+        api.opened(self.settings, lib, note)
+        self.assertFalse(pend.exists())
+        self.assertEqual(json.loads((self.settings / 'setup.json').read_text())['old'], [str(old)])
+        self.assertEqual((old / 'library-data' / 'catalog.json').read_text(), 'old')
+        self.assertEqual([p for p in self.parent.iterdir() if p.name.startswith('LastbookData.old-')], [old])
+
+    def test_a_missing_staged_library_without_its_recorded_old_one_is_not_taken_as_switched(self):
+        """The staged library being gone is not enough: with no recorded old library on disk, nothing says the switch was made."""
+        cur, new = self.with_files()
+        pend = api._pending_file(self.settings)
+        d = install.stage_switch(pend, new, cur)
+        d['old'] = str(install.old_name(cur))              # recorded, but never moved there
+        install._write_json(pend, d)
+        shutil.rmtree(new)
+        self.failed_switch_settings()
+        lib, note = api.startup(self.settings)
+        self.assertEqual((lib / 'library-data' / 'catalog.json').read_text(), 'old')
+        self.assertIn('error', note)
+        self.assertIsNone(note['old'])
+        self.assertNotIn('switched', json.loads(pend.read_text()))
+
+    def test_old_library_that_cannot_be_put_back_for_a_moment_is_put_back_at_the_next_start(self):
+        """Stopped with the old library aside, and the rename putting it back refused once: the record stays, and the next start
+        puts it back and makes the switch."""
+        cur, new, pend, old = self.stopped_after_the_old_library_moved_aside()
+        with self.fail_replace(lambda a, b: a == old and b == cur):
+            lib, note = api.startup(self.settings)
+        self.assertIsNone(lib)
+        self.assertIn(str(old), note['error'])
+        self.assertFalse(cur.exists())
+        self.assertEqual((old / 'library-data' / 'catalog.json').read_text(), 'old')
+        self.assertTrue((old / 'models' / 'model.gguf').is_file())     # carried back before the rename that failed
+        self.assertEqual(json.loads(pend.read_text())['old'], str(old))
+        lib, note = api.startup(self.settings)
+        self.assertEqual(lib, cur)
+        self.assertNotIn('error', note)
+        self.assertEqual((cur / 'library-data' / 'catalog.json').read_text(), 'new')
+        self.assertTrue((cur / 'models' / 'model.gguf').is_file())
+        self.assertTrue((cur / 'derived' / 'geo' / 'addresses' / 'NJ.sqlite').is_file())
+        self.assertEqual(note['old'], str(old))
+        self.assertEqual((old / 'library-data' / 'catalog.json').read_text(), 'old')
+
+    def test_refused_switch_with_a_typographic_path_on_an_ascii_console_is_kept_for_the_next_start(self):
+        """#313 with the say() fix: a refusal naming a file under a folder called with ’ is printed on a console that takes
+        only ASCII without raising, so the attempt is still recorded and the switch kept for the next start."""
+        self.parent = self.tmp / 'Person’s place'
+        cur, new = self.with_files()
+        pend = api._pending_file(self.settings)
+        install.stage_switch(pend, new, cur)
+        self.failed_switch_settings()
+        staged_model = new / 'models' / 'model.gguf'
+        real = os.replace
+
+        def replace(a, b):
+            a = Path(a)
+            if a == cur or a == staged_model:     # the library is in use, and so is the model once it has been carried in
+                raise PermissionError(13, 'in use')
+            return real(a, b)
+        console = io.TextIOWrapper(io.BytesIO(), encoding='ascii', errors='strict')
+        with mock.patch.object(install.os, 'replace', replace), mock.patch.object(sys, 'stdout', console):
+            lib, note = api.startup(self.settings)
+            console.flush()
+            printed = console.buffer.getvalue().decode('ascii')
+        self.assertEqual(lib, cur)
+        self.assertTrue(note.get('again'))
+        self.assertIn(str(staged_model), note['error'])                 # the person's message keeps the real path
+        self.assertIn('setup: switch failed:', printed)
+        self.assertIn('Person?s place', printed)
+        saved = json.loads(pend.read_text())
+        self.assertEqual(saved['attempts'], 1)
+        self.assertEqual(staged_model.read_bytes(), self.model)
+
     def test_a_work_folder_that_is_a_link_is_not_followed(self):
         """Codex on #195: cleaning a work folder that links to the library must not empty the library."""
         cur, new = self.with_files()
