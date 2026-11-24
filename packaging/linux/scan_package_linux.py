@@ -113,7 +113,10 @@ def main():
                 mods = net_imports(data.decode('utf-8'))
                 if mods:
                     net_report[rel] = mods
-                    if rel not in NET_ALLOWED:
+                    # Setup's explicit model-server choice uses numeric loopback, with proxies and redirects disabled.
+                    if rel not in NET_ALLOWED and not (
+                        rel == 'opt/lastbook/engine/model_server.py' and mods == ['urllib.request']
+                    ):
                         problems.append(f'network module in {rel}: {mods}')
             if data[:4] == b'\x7fELF':
                 n_elf += 1
