@@ -157,7 +157,7 @@ UNDISTURBED = {
     # Words from readings the throw-out choice already cites (refreezing thawed food, dented cans). The last four are guards.
     'refreeze': ['food', 'throwout'], 'can i refreeze': ['food', 'throwout'], 'defrosted chicken': ['food', 'throwout'],
     'dented can': ['food', 'throwout'], 'thaw frozen pipes': ['water', 'inhome'], 'freezer thawed': ['food', 'outage'],
-    'frostbite thawed': ['hurt', 'heatcold'], 'bulging can': ['preserve', 'jarcheck'],
+    'frostbite thawed': ['hurt', 'heatcold'], 'swollen can': ['food', 'throwout'],
     'shed': ['repair', None], 'generator load': ['power', 'generator'], 'air quality': ['shelter', 'smoke'],
 }
 # A search that names a sign of a life-threatening emergency shows that choice, even if another choice in the guide
