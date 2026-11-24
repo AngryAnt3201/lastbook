@@ -140,7 +140,7 @@ ALREADY_COVERED = {
     'antenna': ['comms', None], 'documents': ['disaster', None], 'important documents': ['disaster', None],
     'bruise': ['hurt', 'bone'], 'sling': ['hurt', 'bone'], 'stretcher': ['hurt', 'nohelp'], 'stinger': ['hurt', 'sting'],
     'graze': ['hurt', 'closing'], 'spoilage': ['preserve', 'jarcheck'], 'distillation': ['water', 'chemical'],
-    'mudslide': ['land', 'flood-fire'], 'mudflow': ['land', 'flood-fire'], 'honing': ['repair', 'dull'],
+    'honing': ['repair', 'dull'],
     'fermentation': ['preserve', None], 'kombucha': ['preserve', None], 'radiological': ['disaster', None],
 }
 # An emergency that happens to mention a new word still opens the urgent choice first, not the routine one the word was added to.
@@ -151,7 +151,7 @@ URGENT_FIRST = {
     'unconscious bleeding bandage': ['hurt', 'breathing'], 'bandage a burn': ['hurt', 'burn'], 'duct tape wound': ['hurt', 'bleeding'],
     'bruise on head after fall': ['hurt', 'head'], 'head injury bruise': ['hurt', 'head'], 'bruised and bleeding': ['hurt', 'bleeding'],
     'graze bleeding heavily': ['hurt', 'bleeding'], 'bleeding stinger': ['hurt', 'bleeding'], 'stinger throat swelling': ['hurt', 'breathing'],
-    'stretcher neck injury': ['hurt', 'head'], 'carry on stretcher not breathing': ['hurt', 'breathing'], 'mudslide injured': ['hurt', 'check'],
+    'stretcher neck injury': ['hurt', 'head'], 'carry on stretcher not breathing': ['hurt', 'breathing'],
     'pain in left arm and chest': ['hurt', 'sudden'],
 }
 # Searches the new words must not disturb: [guide, choice] that comes first.
