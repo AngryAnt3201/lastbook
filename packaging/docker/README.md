@@ -37,6 +37,14 @@ http://<server address>:8890/?key=<key>
 
 Set `LASTBOOK_LAN_KEY` to keep the same key across reinstalls, so a saved link or bookmark keeps working.
 
+To serve on another port, set `LASTBOOK_PORT` and publish that port (`-e LASTBOOK_PORT=9000 -p 9000:9000`). The
+health check follows it.
+
+The access key was tested with Docker's default bridge network and a published port, as in the commands above: other
+devices, and the server computer itself through the published port, need the key; `docker exec` inside the container
+does not. With `--network host` the server computer reaches it on loopback and so needs no key; other devices still
+do.
+
 Use the server's IP address in the link, not a host name. The server refuses any host name except `localhost`
 (this is its protection against DNS rebinding), so a reverse proxy that passes its own host name will get 403.
 
@@ -51,6 +59,11 @@ MODEL_UPSTREAM=ollama:11434
 SURVIVAL_MODEL_BASE=http://127.0.0.1:11434
 SURVIVAL_MODEL=gemma4:12b
 ```
+
+`MODEL_UPSTREAM` is the model server's `host:port`, with no `http://`. `SURVIVAL_MODEL_BASE` is the address the
+assistant calls, and the entrypoint forwards its port: `http://127.0.0.1:PORT`, `http://localhost:PORT` or
+`http://[::1]:PORT`, with no path (the assistant adds `/v1` itself). With `MODEL_UPSTREAM` set, any other value, or no
+`SURVIVAL_MODEL_BASE`, stops the container at start with the reason in `docker logs`.
 
 The pinned local AI (Gemma 4 26B A4B, about 19 GB of memory) is off in the server version unless `LASTBOOK_LOCAL_AI=1`,
 and also needs the `lastbook-llm` runner built for Linux (`packaging/llm/build_llm_linux.sh`); this image does not

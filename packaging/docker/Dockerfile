@@ -34,5 +34,7 @@ ENV LASTBOOK_DATA=/data/LastbookData \
     PYTHONDONTWRITEBYTECODE=1
 
 EXPOSE 8890
-HEALTHCHECK --interval=60s --timeout=10s --start-period=24h CMD curl -sf -o /dev/null http://127.0.0.1:8890/api/health || exit 1
+# The port the entrypoint gives server.py: LASTBOOK_PORT, or 8890.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=24h \
+    CMD curl -sf -o /dev/null "http://127.0.0.1:${LASTBOOK_PORT:-8890}/api/health" || exit 1
 ENTRYPOINT ["/opt/lastbook/packaging/docker/entrypoint.sh"]
