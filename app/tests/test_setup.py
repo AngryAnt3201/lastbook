@@ -4013,6 +4013,16 @@ class AddressIndexes(Maps):
         self.assertEqual((library / 'derived/geo/addresses/CA.sqlite').read_bytes(), payload)
         self.assertEqual(self.setup('manage', current=library, manifest=mf).current_info()['address_indexes'], ['CA'])
 
+    def test_first_run_without_a_map_downloads_only_the_pack(self):   # #267: setup's "No local map" sends map and address_id as null
+        mf, _ = self.address_manifest()
+        setup = self.setup(manifest=mf)
+        job = setup.start('small', map_id=None, address_id=None)
+        self.assertEqual([item['kind'] for item in job['items']], ['pack'])
+        self.assertEqual(self.wait(setup)['state'], 'done')
+        library, _ = api.startup(self.settings)
+        info = self.setup('manage', current=library, manifest=mf).current_info()
+        self.assertEqual((info['map'], info['address_indexes']), ('base', []))
+
     def test_existing_map_downloads_only_missing_index(self):
         mf, payload = self.address_manifest()
         library = self.parent / 'LastbookData'
@@ -4360,7 +4370,7 @@ class Through(Base):
 
 
 @unittest.skipUnless(shutil.which('node'), 'needs Node')
-class ModelRecoveryScreen(unittest.TestCase):
+class ModelRecoveryScreen(unittest.TestCase):  # upstream, kept through rebase
     """The real setup error renderer and picker dispatch, without a server or browser dependency."""
     def screen(self, kind='model', done=0, code='network', action=False, cancel=False):
         script = r"""
@@ -4446,6 +4456,86 @@ console.log(errorBox({error, items: [{kind, state: 'failed', bytes_done: 0, erro
         self.assertIn('<dt>SHA-256</dt>', html)
         self.assertNotIn('data-act="model-file"', html)
         self.assertIn('Choose a library zip or AI model file', html)
+
+
+@unittest.skipUnless(shutil.which('node'), 'Node is not installed')
+class SkipMap(unittest.TestCase):
+    """#267: setup can finish without a state map on Small (no state map) and All (every state's), not on Medium (California's).
+
+    The fixture uses the validated-manifest shape: validate() keeps a published packs[].map only when it
+    names a map, so entries that omit it all arrive as None (engine/setup/manifest.py). The skip option
+    must still describe each pack's actual result."""
+    def run_helpers(self, pack, picked, current=None):
+        source = (ROOT / 'web/setup.js').read_text(encoding='utf-8')
+        start = source.index('  const packs =')
+        helpers = source[start:source.index('  const packDl =', start)]
+        state = {'manifest': {'packs': [{'id': 'small', 'map': None}, {'id': 'medium', 'map': None}, {'id': 'all', 'map': None}],
+                              'maps': [{'id': 'CA', 'title': 'California'}], 'address_indexes': [{'id': 'CA', 'available': True}]},
+                 'current': current}
+        script = (f'const S = {json.dumps(state)};\nconst choice = {json.dumps({"pack": pack, "ai": False, "map": picked})};\n' + helpers +
+                  '\nconsole.log(JSON.stringify({offered: canSkipMap(), skipped: skippedMap(), missing: mapMissing(), state: selectedState(),'
+                  ' map: mapAdds() ? mapAdds().id : null, address: addressAdds() ? addressAdds().id : null}))')
+        run = subprocess.run(['node', '-e', script], text=True, capture_output=True, check=True)
+        return json.loads(run.stdout)
+
+    def run_switch(self, from_pack, to_pack, picked):
+        source = (ROOT / 'web/setup.js').read_text(encoding='utf-8')
+        start = source.index('  const packs =')
+        helpers = source[start:source.index('  const packDl =', start)]
+        state = {'manifest': {'packs': [{'id': 'small', 'map': None}, {'id': 'medium', 'map': None}, {'id': 'all', 'map': None}],
+                              'maps': [{'id': 'CA', 'title': 'California'}], 'address_indexes': [{'id': 'CA', 'available': True}]},
+                 'current': None}
+        script = (f'const S = {json.dumps(state)};\nconst choice = {json.dumps({"pack": from_pack, "ai": False, "map": picked})};\n' + helpers +
+                  f'\nsetPack({json.dumps(to_pack)});' +
+                  '\nconsole.log(JSON.stringify({kept: choice.map, offered: canSkipMap(), skipped: skippedMap(), missing: mapMissing(), state: selectedState(),'
+                  ' map: mapAdds() ? mapAdds().id : null, address: addressAdds() ? addressAdds().id : null}))')
+        run = subprocess.run(['node', '-e', script], text=True, capture_output=True, check=True)
+        return json.loads(run.stdout)
+
+    def test_small_without_a_map(self):
+        self.assertEqual(self.run_helpers('small', None), {'offered': True, 'skipped': False, 'missing': True, 'state': '', 'map': None, 'address': None})
+        self.assertEqual(self.run_helpers('small', 'none'), {'offered': True, 'skipped': True, 'missing': False, 'state': '', 'map': None, 'address': None})
+
+    def test_all_without_address_search(self):
+        self.assertEqual(self.run_helpers('all', 'none'), {'offered': True, 'skipped': True, 'missing': False, 'state': '', 'map': None, 'address': None})
+
+    def test_medium_keeps_its_own_map(self):   # "none" left over from Small: Medium still has California, as before
+        self.assertEqual(self.run_helpers('medium', 'none'), {'offered': False, 'skipped': False, 'missing': False, 'state': 'CA', 'map': None, 'address': 'CA'})
+
+    def test_a_chosen_state_is_unchanged(self):
+        self.assertEqual(self.run_helpers('small', 'CA'), {'offered': True, 'skipped': False, 'missing': False, 'state': 'CA', 'map': 'CA', 'address': 'CA'})
+
+    def test_library_with_a_map_offers_no_skip(self):   # Library and local AI: a Small library that already has a state map keeps it
+        current = {'pack': 'small', 'map': 'CA', 'address_indexes': ['CA']}
+        self.assertEqual(self.run_helpers('small', None, current), {'offered': False, 'skipped': False, 'missing': False, 'state': 'CA', 'map': None, 'address': None})
+
+    def test_switching_from_all_to_small_drops_the_skip(self):   # "no address search" must not become "no local map" by itself
+        self.assertEqual(self.run_switch('all', 'small', 'none'),
+                         {'kept': None, 'offered': True, 'skipped': False, 'missing': True, 'state': '', 'map': None, 'address': None})
+
+    def test_switching_from_small_to_all_drops_the_skip(self):   # "no local map" must not become "no address search" by itself
+        self.assertEqual(self.run_switch('small', 'all', 'none'),
+                         {'kept': None, 'offered': True, 'skipped': False, 'missing': True, 'state': '', 'map': None, 'address': None})
+
+    def test_switching_to_medium_drops_the_skip(self):   # the drop is harmless there: Medium resolves California either way
+        self.assertEqual(self.run_switch('small', 'medium', 'none'),
+                         {'kept': None, 'offered': False, 'skipped': False, 'missing': False, 'state': 'CA', 'map': None, 'address': 'CA'})
+
+    def test_switching_packs_keeps_a_chosen_state(self):
+        self.assertEqual(self.run_switch('small', 'all', 'CA'),
+                         {'kept': 'CA', 'offered': True, 'skipped': False, 'missing': False, 'state': 'CA', 'map': None, 'address': 'CA'})
+
+    def test_same_pack_keeps_the_skip(self):   # re-entering choose for the same pack changes nothing
+        self.assertEqual(self.run_switch('small', 'small', 'none'),
+                         {'kept': 'none', 'offered': True, 'skipped': True, 'missing': False, 'state': '', 'map': None, 'address': None})
+
+    def test_validated_manifest_nulls_an_omitted_pack_map(self):   # the shape above is what validate() really outputs
+        file = {'name': 'small.zip', 'url': 'https://127.0.0.1/small.zip', 'size': 10, 'sha256': '0' * 64}
+        raw = {'version': 1, 'packs': [{'id': 'small', 'title': 'Small', 'files': [file]},
+                                       {'id': 'medium', 'title': 'Medium', 'files': [file], 'map': 'CA'}]}
+        packs = {p['id']: p for p in manifest.validate(raw, allowed=ALLOWED)['packs']}
+        self.assertIsNone(packs['small']['map'])
+        self.assertEqual(packs['medium']['map'], 'CA')
 
 
 @unittest.skipUnless(os.environ.get('LASTBOOK_FULL_DISK') == '1' and sys.platform == 'darwin', 'LASTBOOK_FULL_DISK=1 on a Mac')
