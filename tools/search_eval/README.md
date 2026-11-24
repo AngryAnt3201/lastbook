@@ -24,6 +24,7 @@ The formulas, constants and how each number in the triage-based search proposal 
 | `stats.py` | 95% intervals for one run; paired before/after tests for two runs on the same questions (needs `--rows`) |
 | `index_identity.py` | Which passages a data folder's meaning index holds, as one SHA-256, to compare two builds |
 | `baseline-main.json`, `baseline-files.md` | The baseline on `main`, and every file it was measured with (pack, model, index, test sets) |
+| `blind-list3/` | List 3 without its labels, in two random orders, for independent blind relabelling: instructions, protocol, the key's SHA-256 (`COMMITMENT.md`), and `agreement.py` (kappa, adjudication) |
 
 Each list's first line is a header: who wrote it, its size and colour counts, and for which fixes it is no longer blind.
 The independent lists have no `need` patterns, so they measure urgency and pages shown, not which page comes first.
