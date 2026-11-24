@@ -22,7 +22,7 @@ from pathlib import Path
 import pefile
 from PyInstaller.archive.readers import CArchiveReader, ZlibArchiveReader
 
-FIRST_PARTY_MODULES = re.compile(r'^(main|server|retrieval|assistant|llm_local|bridge|ui_language|shell_windows|engine(\..*)?)$')
+FIRST_PARTY_MODULES = re.compile(r'^(main|server|retrieval|assistant|llm_local|bridge|contribute|ui_language|shell_windows|engine(\..*)?)$')
 BANNED_MODULES = re.compile(r'^(shell_macos|remote_storage|lastbook_launcher|test_bridge|fixture|http_regression|real_data_check|'
                             r'mac_driver|mac_offscreen|mac_ui_check|mac_main_check|win_app|win_driver|cdp|tests(\..*)?|app\.tests(\..*)?|'
                             r'webview(\..*)?|bottle|proxy_tools|objc(\..*)?|AppKit|WebKit|Foundation)$')

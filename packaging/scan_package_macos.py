@@ -29,7 +29,7 @@ SYSTEM = ('/usr/lib/', '/System/', '@rpath/', '@loader_path/', '@executable_path
 USER_PATH = re.compile(rb'/Users/[A-Za-z0-9._-]+')
 SHIP = json.loads((Path(__file__).resolve().with_name('ship_edits.json')).read_text(encoding='utf-8'))
 HOUSEHOLD = re.compile('|'.join(SHIP['forbidden']).encode(), re.I)
-FIRST_PARTY = re.compile(r'(^|/)(web|content)/|^(main|server|retrieval|assistant|llm_local|bridge|ui_language|shell_macos|engine(\.\w+)?)$')
+FIRST_PARTY = re.compile(r'(^|/)(web|content)/|^(main|server|retrieval|assistant|llm_local|bridge|contribute|ui_language|shell_macos|engine(\.\w+)?)$')
 NETWORK = re.compile(r'^_(socket|connect|bind|listen|accept|getaddrinfo|gethostbyname|sendto|recvfrom)$|CFNetwork|CFSocket|CFStream|NSURLSession|NSURLConnection|NSStream|^_nw_')
 
 

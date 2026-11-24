@@ -49,7 +49,7 @@ button (`engine/update.py`, `downloads.lastbook.org` only).
 
 - No telemetry, analytics, crash reporting, fonts or scripts from the web, or "phone home" of any kind. The one update check
   (`engine/update.py`) runs only when the person presses its button, and only says whether a newer version exists.
-- Our own pages (`web/`) contain no web address. The build fails if they do.
+- Our own pages (`web/`) contain no web address. The build fails if they do. The desktop **Open GitHub** action hands the fixed project repository address to the system browser after a user click. Lastbook makes no request for that action.
 - A new dependency must work fully offline, and must not open a socket or start a server. Say in the pull request what
   it is, its licence, and why it is needed, and add it to `THIRD_PARTY_NOTICES.md`.
 - The local AI runner stays socket-free: no RPC backend, no HTTP server, no download code.
