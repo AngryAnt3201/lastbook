@@ -347,6 +347,16 @@ HEART_ORDINARY = {
     'water heater stopped': ['water', 'inhome'],
 }
 TOPS = sorted({*TOPS, *HEART_URGENT, *HEART_ORDINARY})
+# "cell service" is a phrase of the phones-down choice, so it counts only when the rest of the search is everyday
+# words. A search that also asks about something else keeps every row it had: query -> all the rows shown, in order.
+CELL_SERVICE_ROWS = {
+    'no cell service': [['comms', 'phones-down']], 'lost cell service at home': [['comms', 'phones-down']],
+    'no cell service cant call 911': [['comms', 'phones-down'], ['hurt', None]],
+    'cant call 911': [['comms', 'phones-down'], ['hurt', None]],
+    'no cell service how do i call for help': [['comms', 'phones-down'], ['hurt', 'nohelp']],
+    'solar cell': [['power', 'batteries-solar']], 'cell phone battery': [['power', 'batteries-solar']],
+}
+TOPS = sorted({*TOPS, *CELL_SERVICE_ROWS})
 
 # Another form of a word a guide already has: a plural, -ed or -ing. Alone, each found nothing, because a typed word
 # must start a guide's word and "tourniquets" is longer than "tourniquet". A search for the first must give the same
@@ -653,6 +663,13 @@ class TopicSearch(unittest.TestCase):
             for q in [*LABOR_EVERYDAY, *PHRASES_ALONE]:
                 with self.subTest(q=q, segmenter=r['segmenter']):
                     self.assertEqual(top[q][:1], [PREGNANT])
+
+    def test_cell_service_keeps_the_other_rows(self):
+        for r in self.modes:
+            top = dict(zip(TOPS, (ok(e) for e in r['tops'])))
+            for q, rows in CELL_SERVICE_ROWS.items():
+                with self.subTest(q=q, segmenter=r['segmenter']):
+                    self.assertEqual(top[q], rows)
 
     def test_labor_and_labour_alike(self):
         # Every phrase spelled one way has its twin in the other spelling.
