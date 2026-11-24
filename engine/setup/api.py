@@ -1296,7 +1296,7 @@ class Setup:
                 it['state'], it['error'], it['rate_bps'], it['eta_s'] = 'failed', err, 0, None
             self.job['state'], self.job['error'] = 'failed', err
             self._save_quietly()
-        print(f'setup: failed ({code}): {message}', flush=True)
+        install.say(f'setup: failed ({code}): {message}')
 
     def _save_quietly(self):
         try:
@@ -1670,7 +1670,7 @@ def _map_damaged(target, what):
         install.check_map(target)
         return False
     except install.Refused as e:
-        print(f'setup: {what}:', e.message, flush=True)
+        install.say(f'setup: {what}:', e.message)
         return True
 
 

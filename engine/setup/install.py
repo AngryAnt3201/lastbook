@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import stat
+import sys
 import time
 import zipfile
 from bisect import bisect_right
@@ -408,6 +409,24 @@ def old_name(target):
     return p
 
 
+def say(*parts):
+    """Print a diagnostic line that the console cannot refuse.
+
+    Setup's own messages are written for the person and use typographic punctuation, so a Refused carries characters
+    such as \u2019. Running from source, sys.stdout is the console's own encoding: a non-UTF-8 locale (LC_ALL=C) or a
+    legacy Windows code page cannot take those characters, and print() then raises UnicodeEncodeError in the middle of
+    handling the Refused. The line is only a diagnostic, but the raise escapes before the error is recorded, so the
+    person loses the error the line was reporting. The packaged app's log already replaces what it cannot write
+    (RotatingLog in app/main.py); a plain console gets the same treatment here.
+    """
+    line = ' '.join(str(p) for p in parts)
+    try:
+        print(line, flush=True)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, 'encoding', None) or 'ascii'
+        print(line.encode(enc, 'replace').decode(enc, 'replace'), flush=True)
+
+
 def stage_switch(pend, new_lib, target, model_file=None, kind=None, model_sha256=None):
     """Writes what the switch will do to `pend`, a file in the app's own settings folder (never the work folder), for
     apply_pending. Nothing is renamed yet."""
@@ -651,7 +670,7 @@ def _apply_map(work, pend, d, target, note):
         try:
             swap_map(target, d['new'], old_dir)
         except Refused as e:
-            print('setup: map switch failed:', e.message, flush=True)
+            say('setup: map switch failed:', e.message)
             pend.unlink()
             note['error'] = e.message
             return (target if is_library(target) else None), note
@@ -744,7 +763,7 @@ def apply_pending(pend, work):
         try:
             old = switch(d['new'], target, old)
         except Refused as e:
-            print('setup: switch failed:', e.message, flush=True)
+            say('setup: switch failed:', e.message)
             d['attempts'] = d.get('attempts', 0) + 1
             if d['attempts'] < SWITCH_ATTEMPTS and is_library(target):      # a file in use may be free at the next start: tried again then (only if nothing was left half done)
                 _write_json(pend, d)

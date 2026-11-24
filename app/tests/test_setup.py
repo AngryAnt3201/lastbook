@@ -3919,6 +3919,32 @@ class Maps(Base):
         self.assertIn('error', note)
         self.assertEqual((cur / 'derived/geo/map.sqlite').read_bytes(), b'old')
 
+    def test_a_console_that_cannot_show_the_message_still_records_the_error(self):
+        """A console in a non-UTF-8 locale, or a legacy Windows code page, cannot print the \u2019 in setup's own
+        wording. The diagnostic line must not take the error down with it: the note still carries the message."""
+        cur = self.parent / 'LastbookData'
+        (cur / 'library-data').mkdir(parents=True)
+        (cur / 'library-data/catalog.json').write_text('{}')
+        (cur / 'derived/geo').mkdir(parents=True)
+        (cur / 'derived/geo/map.sqlite').write_bytes(b'old')
+        work = self.parent / 'LastbookData.setup'
+        new = work / 'unpack-map' / 'LastbookData'
+        (new / 'derived/geo').mkdir(parents=True)
+        (new / 'map-set.json').write_text(json.dumps({'name': 'CA', 'files': {'derived/geo/map.sqlite': 999}}))
+        (new / 'derived/geo/map.sqlite').write_bytes(b'short')
+        self.settings.mkdir(parents=True)
+        install.stage_switch(api._pending_file(self.settings), new, cur, kind='map')
+        (self.settings / 'setup.json').write_text(json.dumps({'work': str(work)}))
+        out = io.TextIOWrapper(io.BytesIO(), encoding='ascii', newline='')
+        with mock.patch.object(sys, 'stdout', out):
+            lib, note = api.startup(self.settings)
+        self.assertIn('\u2019', note['error'])                     # the person's wording is kept whole
+        self.assertEqual((cur / 'derived/geo/map.sqlite').read_bytes(), b'old')
+        out.flush()
+        shown = out.buffer.getvalue().decode('ascii')
+        self.assertIn('setup: map switch failed:', shown)       # and the line is still printed, just with ? in it
+        self.assertIn('?', shown)
+
     def test_space_counts_the_map(self):
         mf, _ = self.map_manifest()
         s = self.setup(manifest=mf)
