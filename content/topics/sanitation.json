@@ -12,6 +12,7 @@
   "sewage",
   "sewer",
   "latrine",
+  "loo",
   "bucket toilet",
   "poop",
   "waste",
@@ -34,7 +35,7 @@
   {
    "id": "noflush",
    "label": "The toilet can't be flushed",
-   "hint": "No water, earthquake, broken sewer line",
+   "hint": "No water, earthquake, broken sewer line, loo won't flush",
    "read": [
     {
      "doc": "5cd0b4e41cc479",

@@ -170,6 +170,11 @@ UNDISTURBED = {
     'bathroom': ['sanitation', None], 'where to go to the bathroom': ['sanitation', None], 'bat bite': ['hurt', 'animal-bite'],
     'no cell service': ['comms', 'phones-down'], 'radio reception': ['comms', 'alerts-radio'], 'service dog': ['hurt', 'animal-bite'],
     'cut': ['hurt', 'bleeding'], 'well': ['land', 'water-source'], 'storm': ['disaster', 'flood'],
+    # Words used in Britain, Australia, India and elsewhere for things the guides already cover. The last five are guards.
+    'petrol': ['power', 'generator'], 'kerosene': ['shelter', 'co'], 'paraffin': ['shelter', 'co'], 'aircon': ['shelter', 'heat'],
+    'powerbank': ['power', 'batteries-solar'], 'cooker': ['food', 'cook'], 'hob': ['food', 'cook'], 'mobile': ['comms', None],
+    'the loo wont flush': ['sanitation', 'noflush'], 'mobile phone': ['comms', 'phones-down'], 'smell gas': ['power', 'gas'],
+    'looks bent': ['hurt', 'bone'], 'collected rainwater': ['land', None], 'kerosene heater': ['shelter', 'co'],
     'ice': ['water', 'inhome'], 'micro-hydro': ['energy', None], 'wind': ['disaster', 'hurricane'],
     'winter storm': ['shelter', 'cold'], 'furnace smells like gas': ['power', 'gas'], 'gas furnace': ['power', 'gas'],
     'lost in the forest': ['comms', 'signal'],
