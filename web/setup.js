@@ -79,6 +79,8 @@
   let pollT = 0;
   let confirmCancel = false, confirmRemove = false, confirmOld = false;
   let note = '', noteOk = false;
+  let emptyTries = 0;     // times state was asked again because the manifest came back with no libraries
+  let shown = '';         // the state answer the screen last drew: a background answer the same as it draws nothing
   let repair = null;      // a repair under way: {fixed} turns true once it had to download something; {sure}: this page saw it from the start
   let U = null;           // GET updates: {supported, notify}. null (an engine without it, or the server version's {supported: false}): no control
 
@@ -177,15 +179,25 @@
     return { dl, need };
   }
 
-  async function load() {
-    const upd = call('updates').catch(() => null);   // alongside state: a missing route only hides the control
-    try { S = await call('state') }
+  async function load(bg) {
+    const was = view;
+    const upd = bg ? null : call('updates').catch(() => null);   // alongside state: a missing route only hides the control. Not asked again in the background
+    let s;
+    try { s = await call('state') }
     catch (e) {
+      if (bg) return;
       main.innerHTML = `<div class="s-err" role="alert">${ico('warn')}<div><b data-i18n="setup.error">Setup could not start.</b><p>${esc(e.message)}</p><p><button class="btn" id="again" data-i18n="setup.tryAgain">Try again</button></p></div></div>`;
       globalThis.LastbookI18n?.apply(main);
-      $('#again').onclick = load;
+      $('#again').onclick = () => load();
       return;
     }
+    if (bg && view === 'job') return;   // a job started while this was asked: the answer is older than it
+    const same = bg && JSON.stringify(s) === shown;
+    shown = JSON.stringify(s);
+    S = s;
+    // The person moved on while this was asked (Copy, say), or is on a screen without the lists: the newer lists wait for
+    // when they come back, and the screen they are on stays.
+    if (bg && (view !== was || (view !== 'manage' && view !== 'choose'))) { askAgain(); return }
     const rf = (S.recommend || {}).folder;
     folder = folder || (cur() && cur().folder) || S.default_folder || (rf ? asData(rf) : '');
     if (!choice.pack) {
@@ -195,14 +207,19 @@
       choice.ai = !!rec.ai && aiFits();
       if (cur()) { choice.pack = cur().pack; choice.ai = !!cur().model }
     }
-    const u = await upd;
-    U = u && !u.error ? u : null;
+    if (!bg) { const u = await upd; U = u && !u.error ? u : null }   // a background answer keeps what the first load found, with no second wait
     const j = S.job;
     if (j && j.state && j.state !== 'done' && !(j.state === 'failed' && errCode(j.error) === 'cancelled')) view = 'job';
     else if (j && j.state === 'done') view = (j.copy || j.check) && cur() ? 'manage' : 'done';   // a finished copy, or Check now: back to Library and local AI
     else if (cur() || S.mode === 'manage' || MANAGE_ASKED) view = cur() ? 'manage' : 'choose';
     $('#sBack').hidden = !cur();
-    render(true);
+    if (!bg) render(true);
+    else if (!same) keepFocus(() => render(false));   // a background answer updates the screen without moving focus or scrolling
+    askAgain();
+  }
+  // From source there is no bundled manifest: the engine may still be fetching it. Ask again while the list is empty.
+  function askAgain() {
+    if (!packs().length && view !== 'job' && emptyTries++ < 8) setTimeout(() => { if (!packs().length && view !== 'job') load(true).then(() => { if (view === 'job') poll() }) }, 2500);
   }
 
   /* ------------------------------------------------------------ views */
@@ -215,6 +232,14 @@
     else if (view === 'done') doneView();
     else if (view === 'copy') copyView();
     if (focus && !languageHasFocus()) { const h = main.querySelector('h1'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }) } scrollTo(0, 0) }
+  }
+  function keepFocus(draw) {   // the control that had focus has it again after the redraw, so a keyboard user stays where they were
+    const a = document.activeElement, inMain = a && a !== main && main.contains(a);
+    const sel = !inMain ? '' : a.id ? '#' + CSS.escape(a.id) : a.dataset && a.dataset.act ? `[data-act="${CSS.escape(a.dataset.act)}"]`
+      : a.name ? `[name="${CSS.escape(a.name)}"][value="${CSS.escape(a.value)}"]` : '';
+    draw();
+    const back = sel && main.querySelector(sel);
+    if (back && !back.disabled) back.focus({ preventScroll: true });
   }
   function go(v) { view = v; confirmCancel = confirmRemove = confirmOld = false; note = ''; srv.open = false; srv.note = ''; if (v === 'manage' || v === 'choose') repair = null; render(true) }
 
