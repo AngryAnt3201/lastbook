@@ -3,7 +3,7 @@
   "norm": "pt-1",
   "region": "PT-30",
   "index_filename": "PT-30.sqlite",
-  "description": "Address and place-search expectations for Madeira (PT-30), for the shared runtime work (#31), grown from the Portugal proposal (#297) and its Madeira pilot (#420). The ten rows are verbatim rows of the live PT-30 index — the INE address register via the 2026-02-23 OpenAddresses upload — chosen to cover the pt-1 spelling rules and the shapes a Madeira query takes; tools/build_region_pt_30.py check covers the live index.",
+  "description": "Address and place-search expectations for Madeira (PT-30), for the shared runtime work (#31), grown from the Portugal proposal (#297) and its Madeira pilot (#420). The twelve rows are verbatim rows of the live PT-30 index — the INE address register via the 2026-02-23 OpenAddresses upload — chosen to cover the pt-1 spelling rules and the shapes a Madeira query takes; tools/build_region_pt_30.py check covers the live index.",
   "index_contract": {
     "table": "addr(num TEXT, street TEXT, norm TEXT, city TEXT, state TEXT, zip TEXT, lat REAL, lon REAL, district TEXT)",
     "indexes": [
@@ -16,7 +16,7 @@
       "source": "Instituto Nacional de Estatística, I.P., via OpenAddresses (CC BY 4.0)"
     },
     "rules": [
-      "num is the register's house label with leading zeros stripped only when the rest is all digits ('007' becomes '7'; '0E' and '5 1J' stay as written)",
+      "num is the register's house label with leading zeros stripped only when the rest is all digits ('007' becomes '7'; '0E', '013A' and '5 1J' stay as written)",
       "norm is normalize_pt(street), scheme pt-1",
       "city is the INE locality as the register spells it, upper case, sometimes with a municipality suffix, occasionally empty",
       "state is PT-30 in every row; the district column is empty (the register has no district)",
@@ -153,6 +153,32 @@
       "district": "",
       "lat": 32.65112,
       "lon": -16.847677,
+      "source": "Instituto Nacional de Estatística, I.P., via OpenAddresses (CC BY 4.0)"
+    },
+    {
+      "id": "alvarojustino-013a",
+      "num": "013A",
+      "street": "R ALVARO JUSTINO MATOS",
+      "norm": "rua alvaro justino matos",
+      "city": "FUNCHAL",
+      "state": "PT-30",
+      "zip": "9050459",
+      "district": "",
+      "lat": 32.664331,
+      "lon": -16.914012,
+      "source": "Instituto Nacional de Estatística, I.P., via OpenAddresses (CC BY 4.0)"
+    },
+    {
+      "id": "alvarojustino-13",
+      "num": "13",
+      "street": "R ÁLVARO JUSTINO MATOS",
+      "norm": "rua alvaro justino matos",
+      "city": "FUNCHAL",
+      "state": "PT-30",
+      "zip": "9050459",
+      "district": "",
+      "lat": 32.664749,
+      "lon": -16.914351,
       "source": "Instituto Nacional de Estatística, I.P., via OpenAddresses (CC BY 4.0)"
     }
   ],
@@ -353,6 +379,30 @@
       },
       "expected_name": "R MEIA VOLTA 11 B",
       "expected_detail": "PORTO SANTO, PT-30, 9400075"
+    },
+    {
+      "query": "R ALVARO JUSTINO MATOS 013A",
+      "expected_fixture_ids": [
+        "alvarojustino-013a"
+      ],
+      "lookup": {
+        "norm": "rua alvaro justino matos",
+        "num": "013A"
+      },
+      "expected_name": "R ALVARO JUSTINO MATOS 013A",
+      "expected_detail": "FUNCHAL, PT-30, 9050459",
+      "note": "the register's composite label keeps its zero: exact match only — the house 13 on the same street never answers for it"
+    },
+    {
+      "query": "R Álvaro Justino Matos 13",
+      "expected_fixture_ids": [
+        "alvarojustino-13"
+      ],
+      "lookup": {
+        "norm": "rua alvaro justino matos",
+        "num": "13"
+      },
+      "note": "the register writes this row's street with Á; the composed accent folds to the same key, and the neighbor stays a plain numeral"
     }
   ],
   "no_house_queries": [
@@ -440,7 +490,7 @@
     "An index whose meta says norm = pt-1 is searched only with that rule, and US indexes (no norm key) only with the US rule.",
     "With PT-30.sqlite installed, every answer from an existing US index stays identical, including its Overture Maps credit.",
     "A PT address is written street first (ESTR MONUMENTAL 221), so a result names the house street first, keeps the register's spelling, and credits the index meta source.",
-    "Only an exact house label matches: 222 never falls back to 221, and a bare 11 never returns 11 B.",
+    "Only an exact house label matches: 222 never falls back to 221, a bare 11 never returns 11 B, and the house 13 never answers for the label 013A beside it.",
     "A label that is not a plain numeral ('5 1J', '11 B') is kept and matched in either case, so '5 1j' finds '5 1J'.",
     "The postcode is stored without the hyphen; a query types 9000-100, so the lookup strips the punctuation before comparing, as the US rule does.",
     "The detail line is the US join over what the row holds (city, PT-30, zip) — the register's city in its own spelling, upper case, sometimes with a municipality suffix ('SEIXAL PMZ'), occasionally empty."

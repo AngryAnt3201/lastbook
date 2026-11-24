@@ -40,10 +40,12 @@ class NormalisationTests(unittest.TestCase):
 class HouseNumberTests(unittest.TestCase):
     def test_house_labels_are_stored_as_the_register_writes_them(self):
         """A plain numeral loses its leading zero ('007' and '7' meet in one key); the register's other
-        labels ('0E', '5 1J') stay as people read them on the door, or an exact search would miss them."""
+        labels ('0E', '013A', '5 1J') stay as people read them on the door, or an exact search would miss
+        them, and an all-zero label ('000') stays as written too."""
         self.assertEqual(address_num('007'), '7')
         self.assertEqual(address_num('221'), '221')
         self.assertEqual(address_num('0E'), '0E')        # stripping the zero would leave the fragment E
+        self.assertEqual(address_num('013A'), '013A')    # a composite label keeps its zero
         self.assertEqual(address_num('5 1J'), '5 1J')
         self.assertEqual(address_num('0'), '0')
         self.assertEqual(address_num('000'), '000')      # an all-zero label stays as written
@@ -75,8 +77,10 @@ class FixtureContractTests(unittest.TestCase):
                 self.assertEqual(row['district'], '')          # the register carries no district
                 num = row['num']
                 self.assertTrue(num[:1].isdigit())             # the register gate: a label starts with a digit
-                if num.isdigit():
+                if num.isdigit() and num.strip('0'):           # a plain numeral with a non-zero digit keeps
                     self.assertFalse(num.startswith('0'), 'a plain numeral drops its leading zero')
+                # no leading zero ('007' -> '7'); a composite label ('013A', '5 1J') and an all-zero
+                # label ('000') stay as the register writes them, exactly what address_num stores
 
     def test_lookups_name_the_query_in_the_index_spelling(self):
         """A query's street folds to its lookup key, so the expectation is reachable through normalize_pt."""
