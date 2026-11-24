@@ -1,18 +1,42 @@
 # A triage-based search engine: methods, formulas and how to rerun the numbers
 
+> **Status (this pull request, #402).** This file describes the whole proposal, but **this pull request changes no
+> search code**. Only the measuring tools are added, and they can be run today:
+>
+> - `tools/search_eval/`:
+>   - the test sets;
+>   - `score.py` (the scorer);
+>   - `stats.py` (intervals and paired tests);
+>   - `index_identity.py`;
+>   - the recorded baseline (`baseline-main.json`, `baseline-files.md`);
+>   - `blind-list3/` (List 3 for blind relabelling, with `agreement.py`).
+> - Sections 9 to 14 (measures, test data, how to reproduce, caveats, size, the baseline on `main`) apply to this
+>   pull request and to `main` as it is.
+> - **Sections 1 to 8 are proposals.** Each describes a module that is not on `main`. It arrives, if accepted, in
+>   one of the later pull requests: #403 to #409, all drafts, listed in the table below. Until then, the app's
+>   search is unchanged.
+> - **What the later PRs were measured against.** Parts 2 to 8 branch from `main` at 9645686 (2026-11-21). Each was
+>   measured on its own branch and compared with the part before it. Part 2 was compared with this PR's baseline,
+>   recorded on `main` at f41b6ce.
+>   - From 9645686 to f41b6ce, the only change in the search files is a two-line fix to the chat's repeat check,
+>     which is not search.
+>   - `main` at 6dd3080 (1.1.16) gave the same results as f41b6ce on all 3,258 questions.
+>   - Current `main` (4cb8a20, 1.1.17) has not been rerun. Its changes in these files are the model-server choice
+>     and a cache fallback, not ranking.
+
 This documents the whole triage-based search engine proposed on issue #154, as a series of 8 pull requests. Only the
 first one is here so far: the test sets and the scorer in [`tools/search_eval/`](../tools/search_eval/README.md), with a
 baseline recorded on `main`. The modules described below arrive in the later pull requests:
 
 | Section | Module | Pull request |
 |---|---|---|
-| 1 | Long pages in sections (`engine/sections.py`) | 2 |
-| 3 | Typo correction (`engine/typos.py`, word list) | 3 |
-| 2 | Encyclopedia articles by best section (`engine/wiki_pick.py`) | 4 |
-| 4, 5, 8 | Body signs, confidence estimate, injury guard on everyday phrases (`engine/confidence.py`) | 5 |
-| 6 | The runner's `--embed` mode (`packaging/llm/lastbook_llm.cpp`) | 6 |
-| 4, 6 | Urgency on one source (`urgent` phrases in the guides, `assistant.is_danger`, `engine/meaning_red.py`) | 7 |
-| 7 | Conversation handling (`assistant.turn_hits`) | 8 |
+| 1 | Long pages in sections (`engine/sections.py`) | 2 (#403) |
+| 3 | Typo correction (`engine/typos.py`, word list) | 3 (#404) |
+| 2 | Encyclopedia articles by best section (`engine/wiki_pick.py`) | 4 (#405) |
+| 4, 5, 8 | Body signs, confidence estimate, injury guard on everyday phrases (`engine/confidence.py`) | 5 (#406) |
+| 6 | The runner's `--embed` mode (`packaging/llm/lastbook_llm.cpp`) | 6 (#407) |
+| 4, 6 | Urgency on one source (`urgent` phrases in the guides, `assistant.is_danger`, `engine/meaning_red.py`) | 7 (#408) |
+| 7 | Conversation handling (`assistant.turn_hits`) | 8 (#409) |
 
 Every constant below was read from the code on the author's fork, where the engine was built and measured, or from a
 stored output file, not from memory. Numbers marked "measured on the author's fork" come from there; each pull request
