@@ -48,6 +48,7 @@ EVERYDAY = {
     'spinal fracture': ['hurt', 'head'], 'fractured vertebra': ['hurt', 'head'], 'fractured vertebrae': ['hurt', 'head'],
     'vertebral fracture': ['hurt', 'head'], 'fractured vertebral column': ['hurt', 'head'],
     'I drank from the stream and have diarrhea': ['hurt', 'diarrhea'], 'I drank and feel dehydrated': ['hurt', 'diarrhea'],
+    'carbon monoxide': ['shelter', 'co'], 'carbon monoxide poisoning': ['shelter', 'co'],
 }
 
 # Injuries in a forest: since "forest fires" joined the wildfire hint, "forest" also picks wildfire, so these only have
@@ -209,12 +210,18 @@ EMERGENCY_FIRST = {
     'cardiac arrest': ['hurt', 'breathing'], 'heart stopped': ['hurt', 'breathing'], 'AED': ['hurt', 'breathing'],
     'aed': ['hurt', 'breathing'], 'defibrillator': ['hurt', 'breathing'], 'heart attack': ['hurt', 'sudden'],
     'having a heart attack': ['hurt', 'sudden'], 'signs of heart attack': ['hurt', 'sudden'],
+    # A stroke needs the stroke signs, not heat illness, which also says "stroke" ("heat stroke") and is listed first.
+    'stroke': ['hurt', 'sudden'], 'a stroke': ['hurt', 'sudden'], 'having a stroke': ['hurt', 'sudden'],
+    'my dad is having a stroke': ['hurt', 'sudden'], 'stroke symptoms': ['hurt', 'sudden'], 'mini stroke': ['hurt', 'sudden'],
 }
 # Searches those words must not disturb: [guide, choice] that comes first.
 EMERGENCY_UNDISTURBED = {
     'heart': ['health', 'chronic'], 'heart disease': ['health', 'chronic'], 'blood pressure': ['health', 'chronic'],
     'chest pain': ['hurt', 'sudden'], 'collapsed': ['hurt', 'breathing'], 'not breathing': ['hurt', 'breathing'],
     'drowning': ['hurt', 'breathing'], 'cpr': ['hurt', None], 'stopped': ['disaster', 'earthquake-after'],
+    'heat stroke': ['hurt', 'heatcold'], 'sun stroke': ['hurt', 'heatcold'], 'heat stroke symptoms': ['hurt', 'heatcold'],
+    'stroke from the heat': ['hurt', 'heatcold'], 'stroke in the heat': ['hurt', 'heatcold'],   # heat phrases win over "stroke"
+    'signs of a stroke': ['hurt', 'sudden'],
 }
 TOPS = sorted({*TOPS, *EMERGENCY_FIRST, *EMERGENCY_UNDISTURBED})
 
@@ -361,6 +368,20 @@ RANK_FORMS = {
     'missing': [], 'planes': [], 'cans': [], 'stung': [],         # not missiles, not a plan, "can" is a stop word, irregular
     'baby': ['baby'], 'baby choked': ['baby'], 'choked baby': ['baby'], 'feeding tourniquets': ['baby'],
 }
+
+# Words used in Italy. hailstorm sits in the thunderstorm choice's hint and opens the guide hail opens. 118 was left
+# out: it is an ambulance number in Italy but a fire number in Switzerland, and search has no country to tell apart.
+IT_SAME_GUIDE = {'hailstorm': 'hail', 'hailstorms': 'hail', 'Hailstorm': 'hail'}
+# Searches those words must not disturb: [guide, choice] that comes first. "water cut" was left out for the third:
+# as a keyword of the water guide it put that guide ahead of first aid for any search with "water" and "cut" in it.
+IT_UNDISTURBED = {'hail': ['disaster', 'thunderstorm'], 'thunderstorm': ['disaster', 'thunderstorm'],
+                  'water on a cut': ['hurt', 'bleeding'],
+                  'hailstorm': ['disaster', 'thunderstorm'], 'hailstorm damage': ['shelter', 'damaged']}
+# Left out, so these still find nothing: "civil protection" as two keywords would let each word open the disaster
+# guide alone, and "combi" (the boiler that heats most Italian homes) would answer "comb".
+IT_NOTHING = ['civil', 'protection', 'comb']
+TOPS = sorted({*TOPS, *IT_SAME_GUIDE, *IT_SAME_GUIDE.values(),
+               *IT_UNDISTURBED, *IT_NOTHING})
 
 CASES = {
     'stop': QSTOP, 'fold': list(FOLD), 'match': [m[:2] for m in MATCH], 'rank': ENGLISH, 'topics': TOPICS,
@@ -631,6 +652,21 @@ class TopicSearch(unittest.TestCase):
             for q in PHRASE_THREATS:
                 with self.subTest(q=q, segmenter=r['segmenter']):
                     self.assertEqual(top[q][:1], plain[q][:1])
+
+    def test_words_used_in_italy(self):
+        for r in self.modes:
+            top = dict(zip(TOPS, (ok(e) for e in r['tops'])))
+            for q, us in IT_SAME_GUIDE.items():
+                with self.subTest(q=q, us=us, segmenter=r['segmenter']):
+                    self.assertTrue(top[q])
+                    self.assertEqual(top[q][0][0], top[us][0][0])
+            for q, first in IT_UNDISTURBED.items():
+                with self.subTest(q=q, segmenter=r['segmenter']):
+                    self.assertEqual(top[q][:1], [first])
+            for q in IT_NOTHING:
+                with self.subTest(q=q, segmenter=r['segmenter']):
+                    self.assertEqual(top[q], [])
+
 
 if __name__ == '__main__':
     unittest.main()
