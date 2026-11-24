@@ -210,7 +210,7 @@
   {
    "id": "long-outage",
    "label": "The outage could last days or weeks",
-   "hint": "Planning, heat or cold, staying put or leaving",
+   "hint": "No electricity for days, planning, heat or cold, staying put or leaving",
    "read": [
     {
      "doc": "e629b2983d95e4",
