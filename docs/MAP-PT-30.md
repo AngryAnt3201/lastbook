@@ -98,8 +98,9 @@ the Madeira rows carry) and the name abbreviations in any position (`S`→`sao`,
 `D`/`DA`/`DO`→`de`, `DR`→`doutor`, `CMDT`→`comandante`). `R DE SANTA MARIA`, `Rua de Santa Maria` and
 `r de santa maria` then share one key, as do `CAM S JOSE` and `Caminho São José`. Separated accents compose
 first (NFC), so a Mac or iOS paste of `São` with the tilde as its own character folds the same way, as `de-1`
-does. The house label keeps the register's spelling: a plain numeral loses its leading zero (`007` becomes
-`7`), and every other label stays as written (`0E`, `5 1J`), so what a door shows is what a query finds. The
+does. The house label keeps the register's spelling: a plain numeral carrying a non-zero digit loses its
+leading zero (`007` becomes `7`), while composite labels (`0E`, `013A`, `5 1J`) and an all-zero label
+(`000`) stay as written, so what a door shows is what a query finds. The
 rule lives in the builder and travels to the runtime with the index; nothing in the US search path changes.
 
 The expansions do real matching work: the register's `ER 222` rows (626 of them) share a key with
@@ -156,7 +157,7 @@ Address fixtures for the future runtime path — each is a register row whose po
 road of the same name in the built map, within 10–35 m of it (proximity queries against `national.sqlite`,
 22 November 2026), so no claim rests on one dataset. The same expectations live as
 `app/tests/fixtures/pt_30_queries.json` with the contract tests in `app/tests/test_build_region_pt_30.py`,
-in the `de_be_queries.json` form (#433): ten verbatim rows of this index, the queries with their lookups, and
+in the `de_be_queries.json` form (#433): twelve verbatim rows of this index, the queries with their lookups, and
 the rule that derives every expected answer from the rows, so `FixtureContractTests` fails if a row, a lookup
 or an expectation stops following from what the file states:
 
