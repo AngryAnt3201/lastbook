@@ -51,19 +51,55 @@ To check a rerun against the baseline, see [baseline-files.md](baseline-files.md
 ```
 python -B tools/search_eval/stats.py kw.json                   # one run
 python -B tools/search_eval/stats.py before.json after.json    # a change, on the same questions
+python -B tools/search_eval/stats.py kw.json --md --json out.json   # markdown, and the numbers as JSON
 ```
 
-- **One run:** each yes/no measure as a count, a rate and its Wilson 95% interval; `useful_mean` with a percentile
-  bootstrap 95% interval (2,000 resamples of the questions, seed 1, so the output is the same every time).
-- **Two runs:** questions are paired by set and id. For a yes/no measure, how many went no → yes and yes → no, and the
-  exact McNemar p (two-sided, on those questions only). For `useful_mean`, the mean paired difference with a paired
-  bootstrap 95% interval.
-- **Reading it:** small groups give wide intervals (3 of 5 is 23–88%), so report them as counts. The p-values are not
-  corrected for the number of groups and measures. One measure is the main result, fixed before a change is measured:
-  red questions' `first_ok` for a ranking change, red recall for the urgency check. The rest are descriptive.
+Every figure is given twice, and the two are not the same kind of result.
+
+- **Row level: exploratory (assumes rows independent).** Each question is one observation. This is wrong for part of
+  the data: a question, its other phrasings and its typo versions are about one topic and tend to be answered alike,
+  and several questions on one topic are correlated. Row-level intervals are then too narrow and row-level p-values
+  too small. They are kept because they are what the earlier reports used, and the output labels them as exploratory.
+- **Clustered (the one to quote).** The unit that is resampled or permuted is the cluster, not the question. A cluster
+  is the original question with all its other phrasings and typo versions: the `topic` field of the rows `score.py
+  --rows` writes (checked: every typo version carries its original's topic; 159 clusters over the 362 triage
+  questions, 21 over #128's 52, 32 over #154's 64). Sets that carry no topic (the four lists, #241, glued messages,
+  conversations) have one question per cluster, so for them the clustered test is the row-level test and only the
+  interval method differs. The lists' `persona` field (lists 3 and 4) is a coarser grouping, available as a
+  sensitivity check with `--cluster-by persona`; it is not the default because a persona is a writing style, not a
+  topic. The cluster count is printed for every group (`clusters=`).
+
+What is computed:
+
+- **One run:** each yes/no measure as a count, a rate and its Wilson 95% interval (row level), and a clustered 95%
+  interval; `useful_mean` with a percentile bootstrap 95% interval of the questions (row level) and of the clusters
+  (clustered). Both bootstraps use 2,000 resamples and seed 1, so the output is the same every time. The clustered
+  rate is the number of hits over the number of questions in the resampled clusters. The design effect (`deff`) is the
+  variance of the clustered estimate divided by the variance the row-level formula assumes: 1 means clustering changes
+  nothing, 2 means the variance is twice as large. At 0% or 100% the bootstrap has no spread and the clustered interval
+  is given as n/a (read the Wilson interval there).
+- **Two runs:** questions are paired by set and id. For a yes/no measure: how many went no → yes and yes → no, the
+  exact McNemar p (row level), and the clustered p. The clustered test is the clustered McNemar statistic of Durkalski,
+  Palesch, Lipsitz and Rust (2003), "Analysis of clustered matched-pair data", Statistics in Medicine 22: 2417-2428:
+  with d<sub>i</sub> = (no → yes) − (yes → no) counted inside cluster i, the statistic is (Σd<sub>i</sub>)² / Σd<sub>i</sub>²,
+  which for one question per cluster is the usual McNemar chi-square. The p reported uses the exact distribution of
+  that statistic when every cluster's sign is flipped at random (all 2<sup>k</sup> patterns enumerated), which for
+  one question per cluster is the exact McNemar p; the chi-square approximation is in the JSON as `p_asymptotic`. Its
+  `deff_mcnemar` is Σd<sub>i</sub>² over the number of changed questions. For the means: the paired difference with a bootstrap
+  interval of the questions and of the clusters; for rates, the paired difference with a cluster-bootstrap interval.
+- **Small groups:** a group with under 20 questions, or under 20 clusters for the clustered figures, shows counts only
+  (no interval; 3 of 5 is 23–88%). The exact p-values of the paired tests are still printed.
+- **Development and held-out.** Every set is tagged. `held-out` is list 3, the only data that stayed unseen throughout
+  (nothing was changed because of it). `development` is everything else: the case files the system was built on,
+  lists 1 and 2 (built against, or partly used for fixes), and list 4 (read once its results were in). They are
+  printed in separate sections, held-out first, and never pooled. Results from the development sets say how the system
+  does on what it was tuned on; only the held-out section is evidence about unseen questions.
+- **Reading it:** the p-values are not corrected for the number of groups and measures. One measure is the main
+  result, fixed before a change is measured: red questions' `first_ok` for a ranking change, red recall for the urgency
+  check. The rest are descriptive.
 - **Against a target:** a claim such as "undertriage under 5%" holds when the lower end of red recall's interval is at
   or above 95%, not its rate alone. With Wilson's interval that needs at least 73 red lines with no miss, 110 with one
-  miss, 142 with two.
+  miss, 142 with two. Each line on the lists is its own cluster, so this reading is the row-level one.
 
 ## What the measures mean
 

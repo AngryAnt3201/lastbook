@@ -278,6 +278,8 @@ def run_lists(search, urgent, rows_out):
             rec = {'set': f'list{n}', 'id': f'list{n}.{i:03d}', 'q': r['text'], 'triage': r['triage'],
                    'counter': 'counterexample' in kinds, 'mild': 'mild' in kinds, 'lang': r.get('lang', 'en'),
                    'flagged': urgent(r['text']) if urgent else None, 'pages_shown': pages_shown(hits), 'n_hits': len(hits)}
+            if r.get('persona'):    # lists 3 and 4: the line's persona, for stats.py --cluster-by persona
+                rec['persona'] = r['persona']
             res.append(rec)
             rows_out.append(dict(rec, titles=[f"{h.get('title')} p.{h.get('page')}" for h in hits[:3]]))
 

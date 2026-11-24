@@ -562,7 +562,7 @@ Counted on what is proposed, part by part (`git diff --numstat` from each branch
 
 | Part | Code (+/-) | Tests (+lines, `def test_`) | New modules and tools |
 |---|---|---|---|
-| 1 test set and scorer | +639 | +106, 8 | `tools/search_eval/score.py`, `stats.py`, `index_identity.py` |
+| 1 test set and scorer | +881 | +213, 15 | `tools/search_eval/score.py`, `stats.py`, `index_identity.py` |
 | 2 sections | +438 / -55 | +231, 8 | `engine/sections.py` |
 | 3 typos | +755 / -5 | +389, 33 | `engine/typos.py`, `tools/english_words.py` |
 | 4 encyclopedias | +185 / -29 | +128, 12 | `engine/wiki_pick.py` |
@@ -570,7 +570,7 @@ Counted on what is proposed, part by part (`git diff --numstat` from each branch
 | 6 runner `--embed` | +104 / -12 | 0 | (C++ only) |
 | 7 urgency | +806 / -27 | +871, 61 | `engine/meaning_red.py`, `engine/urgent_phrases.py`, `tools/meaning_red_model.py` |
 | 8 conversation | +574 / -80 | +574, 48 | |
-| **All** | **+4,130 / -228** | **+2,949, 213** | |
+| **All** | **+4,372 / -228** | **+3,056, 220** | |
 
 - **Code:** Python, JavaScript, CSS, C++, shell, the macOS spec and HTML outside `app/tests/` (HTML is only version
   bumps). Not counted: tests, docs, data (the test set's question files, the English word list's licence, the guides'
@@ -586,13 +586,31 @@ Recorded with `tools/search_eval/score.py` on `main` at f41b6ce, with the publis
 from it by main's own indexer, and kept in `tools/search_eval/baseline-main.json`. Every file it was measured with (pack,
 model, index, test sets) is identified by SHA-256 in `tools/search_eval/baseline-files.md`, with the commands to rerun it.
 
-**Statistical methods.** Each question is one observation. For a yes/no measure the table gives the count, the rate and
-its 95% confidence interval (Wilson score interval). For the mean number of useful pages of 8 it gives the mean and a 95%
-percentile bootstrap interval (2,000 resamples of the questions, fixed seed). Groups under 20 questions are given as
-counts only. A change is compared on the same questions (paired): for a yes/no measure, the exact McNemar test (two-sided
-binomial test on the questions that changed); for the mean, a paired bootstrap interval of the difference. P-values are
-not corrected for the number of groups and measures: for a ranking change the primary outcome, fixed beforehand, is red
-questions' first useful page, and the other measures are descriptive. All of this is `tools/search_eval/stats.py`.
+**Statistical methods.** Two analyses are given for every result, and they are not equally trustworthy. *Row level:* each
+question is one observation. For a yes/no measure the table gives the count, the rate and its 95% confidence interval
+(Wilson score interval); for the mean number of useful pages of 8, the mean and a 95% percentile bootstrap interval
+(2,000 resamples of the questions, fixed seed 1). A change is compared on the same questions (paired): for a yes/no
+measure, the exact McNemar test (two-sided binomial test on the questions that changed); for the mean, a paired bootstrap
+interval of the difference. This treats every question as independent of the others, which is not true here: a question,
+its other phrasings and its typo versions are about one topic, and a topic's questions tend to be answered alike. The
+row-level intervals and p-values are therefore **exploratory (they assume the rows are independent)** and are too
+narrow or too small by an unknown amount. *Clustered:* the unit that is resampled is the topic. A cluster is the original
+question together with all its other phrasings and typo versions (the `topic` field of the scorer's rows; every typo
+version carries its original's topic). The triage set has 159 clusters over its 362 questions, #128's set 21 over 52,
+#154's 32 over 64; the lists, #241, the glued messages and the conversations have no topic field, so each question is
+its own cluster there (the clustered test is then the row-level test). Clustered intervals are percentile bootstrap
+intervals over whole clusters (same 2,000 resamples and seed). Clustered paired tests for yes/no measures use the
+clustered McNemar statistic of Durkalski, Palesch, Lipsitz and Rust [2]: with d<sub>i</sub> the number of questions of
+cluster i that went no to yes minus the number that went yes to no, (Σd<sub>i</sub>)² / Σd<sub>i</sub>², whose p-value is computed
+exactly by flipping the sign of each cluster's d<sub>i</sub> in all possible ways (for one question per cluster this is the exact
+McNemar test). The design effect (variance with clusters divided by variance assuming independence) is reported with each
+clustered interval. Groups under 20 questions, or under 20 clusters for the clustered figures, are given as counts only.
+P-values are not corrected for the number of groups and measures: for a ranking change the primary outcome, fixed
+beforehand, is red questions' first useful page, and the other measures are descriptive. *Development and held-out:*
+only list 3 stayed unseen throughout (nothing was changed because of it); every other set (the case files, lists 1 and
+2, and list 4 once its results had been read) is development data, on which the system was built or tuned. The two are
+reported separately and never pooled; the list table below says which is which. All of this is
+`tools/search_eval/stats.py`, which prints both analyses with these labels.
 
 **Reproducibility.** Keyword results are deterministic: a rerun on main f41b6ce gave the same 8 pages for all 3,258
 questions as the first run on 5e656fb. Hybrid results depend on the meaning index, which each machine builds: a CPU and
@@ -605,6 +623,8 @@ the author's fork, whose page labels differ in 351 documents and which predates 
 transcripts (337,016 passages instead of 338,910). Against main's own index, one yes/no measure of one question changed
 (glued urgent messages, any of top 3 useful: 3 → 4) and some useful-page means rose by up to 0.25; the conclusions are
 the same.
+
+Row level (exploratory; assumes rows independent; all sets here are development data except list 3 below):
 
 | Set | Mode | n | useful of 8, mean (95% CI) | first page useful | any of top 3 useful | no useful page | covered | topic cap broken |
 |---|---|---|---|---|---|---|---|---|
@@ -638,21 +658,65 @@ the same.
 #154's own useful count (keyword): 141 of 256 clean, 101 of 256 typos.  
 #154's own useful count (hybrid): 177 of 256 clean, 143 of 256 typos.  
 
-| List | Mode | red: pages shown | red: no pages | yellow: pages shown | green: pages shown |
+| List (status) | Mode | red: pages shown | red: no pages | yellow: pages shown | green: pages shown |
 |---|---|---|---|---|---|
-| 1 | keyword | 318 (93%; 89–95) of 343 | 25 | 102/104 | 242/243 |
-| 1 | hybrid | 343 (100%; 99–100) of 343 | 0 | 104/104 | 243/243 |
-| 2 | keyword | 238 (96%; 92–98) of 249 | 11 | 111/111 | 245/246 |
-| 2 | hybrid | 249 (100%; 98–100) of 249 | 0 | 111/111 | 246/246 |
-| 3 | keyword | 194 (97%; 94–99) of 199 | 5 | 78/78 | 254/254 |
-| 3 | hybrid | 199 (100%; 98–100) of 199 | 0 | 78/78 | 254/254 |
-| 4 | keyword | 115 (100%; 97–100) of 115 | 0 | 153/153 | 564/564 |
-| 4 | hybrid | 115 (100%; 97–100) of 115 | 0 | 153/153 | 564/564 |
+| 1 (development) | keyword | 318 (93%; 89–95) of 343 | 25 | 102/104 | 242/243 |
+| 1 (development) | hybrid | 343 (100%; 99–100) of 343 | 0 | 104/104 | 243/243 |
+| 2 (development) | keyword | 238 (96%; 92–98) of 249 | 11 | 111/111 | 245/246 |
+| 2 (development) | hybrid | 249 (100%; 98–100) of 249 | 0 | 111/111 | 246/246 |
+| 3 (held-out) | keyword | 194 (97%; 94–99) of 199 | 5 | 78/78 | 254/254 |
+| 3 (held-out) | hybrid | 199 (100%; 98–100) of 199 | 0 | 78/78 | 254/254 |
+| 4 (development) | keyword | 115 (100%; 97–100) of 115 | 0 | 153/153 | 564/564 |
+| 4 (development) | hybrid | 115 (100%; 97–100) of 115 | 0 | 153/153 | 564/564 |
 
 Glued emergencies (keyword): first page useful 0 of 18, no result at all 18.  
 Glued emergencies (hybrid): first page useful 1 of 18, no result at all 0.  
+
+**Clustered intervals (the ones to quote).** The same measurements with topics as clusters, for the groups with at least 20
+clusters; the row-level column repeats the table above (exploratory, assumes rows independent). Design effect 1 means
+clustering changes nothing; it is near 1 here because the groups are split by clean and typo version, so a topic rarely
+has two questions in the same group, and at most about 1.25 (the triage typo versions and #128's clean questions, where several share a topic).
+Clustered "n/a": at 0% or 100% the bootstrap has no spread; read the Wilson interval. List 3 is the held-out list;
+every other row is development data.
+
+| Set | Mode | n | clusters | first page useful, row level (95% CI) | clustered 95% CI | design effect | mean useful of 8, clustered 95% CI |
+|---|---|---|---|---|---|---|---|
+| Triage, red | keyword | 131 | 67 | 58 (44%; 36–53) | 35–53 | 1.03 | 3.89 (3.32–4.47) |
+| Triage, red | hybrid | 131 | 67 | 88 (67%; 59–75) | 58–75 | 1.10 | 5.13 (4.62–5.65) |
+| Triage, yellow | keyword | 56 | 34 | 39 (70%; 57–80) | 58–80 | 0.83 | 5.05 (4.34–5.82) |
+| Triage, yellow | hybrid | 56 | 34 | 42 (75%; 62–84) | 64–85 | 0.90 | 5.86 (5.21–6.46) |
+| Triage, green | keyword | 44 | 37 | 36 (82%; 68–90) | 70–93 | 1.01 | 5.77 (5.05–6.50) |
+| Triage, green | hybrid | 44 | 37 | 37 (84%; 71–92) | 72–94 | 1.00 | 6.84 (6.26–7.39) |
+| Triage, counterexamples | keyword | 22 | 21 | 14 (64%; 43–80) | 41–83 | 1.05 | 4.91 (3.64–6.09) |
+| Triage, counterexamples | hybrid | 22 | 21 | 17 (77%; 57–90) | 57–95 | 0.98 | 5.73 (4.71–6.62) |
+| Triage, typo versions | keyword | 109 | 79 | 30 (28%; 20–37) | 19–38 | 1.24 | 2.23 (1.65–2.85) |
+| Triage, typo versions | hybrid | 109 | 79 | 49 (45%; 36–54) | 36–55 | 1.08 | 3.44 (2.93–3.98) |
+| #128, clean | keyword | 27 | 21 | 16 (59%; 41–75) | 42–75 | 0.82 | 4.44 (3.33–5.67) |
+| #128, clean | hybrid | 27 | 21 | 24 (89%; 72–96) | 76–100 | 1.25 | 5.93 (5.12–6.81) |
+| #128, typos | keyword | 25 | 21 | 13 (52%; 33–70) | 35–70 | 0.80 | 3.60 (2.48–4.92) |
+| #128, typos | hybrid | 25 | 21 | 15 (60%; 41–77) | 43–78 | 0.82 | 4.72 (3.59–6.04) |
+| #154, clean | keyword | 32 | 32 | 20 (62%; 45–77) | 47–78 | 0.89 | 4.47 (3.53–5.41) |
+| #154, clean | hybrid | 32 | 32 | 20 (62%; 45–77) | 44–78 | 1.01 | 5.47 (4.62–6.22) |
+| #154, typos | keyword | 32 | 32 | 13 (41%; 26–58) | 25–56 | 0.95 | 2.91 (1.84–4.06) |
+| #154, typos | hybrid | 32 | 32 | 14 (44%; 28–61) | 28–62 | 0.98 | 4.16 (3.16–5.19) |
+| #241 | keyword | 21 | 21 | 12 (57%; 37–76) | 38–76 | 0.92 | 4.81 (3.81–5.81) |
+| #241 | hybrid | 21 | 21 | 14 (67%; 45–83) | 48–86 | 0.91 | 5.81 (5.38–6.29) |
+| Conversations (last message) | keyword | 52 | 52 | 22 (42%; 30–56) | 29–56 | 1.04 | 3.23 (2.35–4.13) |
+| Conversations (last message) | hybrid | 52 | 52 | 24 (46%; 33–59) | 33–60 | 1.01 | 4.00 (3.13–4.85) |
+
+| List (status) | Mode | red: pages shown (95% CI) | clustered 95% CI |
+|---|---|---|---|
+| 1 (development) | keyword | 318 (93%; 89–95) | 90–95 |
+| 1 (development) | hybrid | 343 (100%; 99–100) | n/a |
+| 2 (development) | keyword | 238 (96%; 92–98) | 93–98 |
+| 2 (development) | hybrid | 249 (100%; 98–100) | n/a |
+| 3 (held-out) | keyword | 194 (97%; 94–99) | 95–99 |
+| 3 (held-out) | hybrid | 199 (100%; 98–100) | n/a |
+| 4 (development) | keyword | 115 (100%; 97–100) | n/a |
+| 4 (development) | hybrid | 115 (100%; 97–100) | n/a |
 
 ## Sources
 
 1. American College of Surgeons Committee on Trauma, *Resources for Optimal Care of the Injured Patient* (2014),
    chapter 3, p. 28. https://www.rumcsi.org/wp-content/uploads/2020/09/Resources-for-Optimal-Care-2014-v11-1.pdf
+2. Durkalski VL, Palesch YY, Lipsitz SR, Rust PF. Analysis of clustered matched-pair data. *Statistics in Medicine* 2003;22(15):2417-2428.
