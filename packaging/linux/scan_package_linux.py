@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # the build invoke
 import i18n_catalogs  # noqa: E402
 
 BAD_SEGMENTS = {'test', 'tests', 'testing', 'pytest', 'unittest', 'doctest', 'remote_storage', 'webview', 'bottle', 'proxy_tools', 'onnxruntime',
-                'tokenizers', 'shell_windows', 'shell_macos', 'clr', 'clr_loader', 'pythonnet', 'lastbook_launcher', 'tkinter', 'PyInstaller',
+                'tokenizers', 'shell_windows', 'shell_macos', 'update_macos', 'clr', 'clr_loader', 'pythonnet', 'lastbook_launcher', 'tkinter', 'PyInstaller',
                 'objc', 'AppKit', 'Foundation', 'PyObjCTools', 'vendor-macos', 'fixture', 'real_data_check', 'http_regression', 'cdp', 'f2py', 'pypdfium2_cli'}
 BAD_FILE = re.compile(r'(^|/)(test_[^/]*|[^/]*_test\.(py|pyc|so)|[^/]*_tests[^/]*\.so|[^/]*\.onnx|[^/]*\.gguf|mac_[^/]*|win_[^/]*)$', re.I)
 TEST_MARKERS = [b'TEST-STUB', b'mac_offscreen', b'stub_chat', b'stub-chat']
@@ -138,7 +138,7 @@ def main():
                 problems.append(f'path of a person\'s folder {u} in {where[:3]}')
         if 'opt/lastbook/engine/setup/roots.pem' not in packaged:
             problems.append('missing from the package: opt/lastbook/engine/setup/roots.pem')
-        for need in ('opt/lastbook/gst/libgstlastbooksrc.so', 'opt/lastbook/lastbook.py', 'opt/lastbook/app/main.py', 'opt/lastbook/app/shell_linux.py', 'opt/lastbook/app/ui_language.py',
+        for need in ('opt/lastbook/gst/libgstlastbooksrc.so', 'opt/lastbook/lastbook.py', 'opt/lastbook/app/main.py', 'opt/lastbook/app/shell_linux.py', 'opt/lastbook/app/ui_language.py', 'opt/lastbook/app/contribute.py',
                      'opt/lastbook/setup/manifest-v1.json', 'opt/lastbook/VERSION', 'usr/bin/lastbook', 'usr/share/applications/lastbook.desktop'):
             if need not in packaged:
                 problems.append(f'missing from the package: {need}')
