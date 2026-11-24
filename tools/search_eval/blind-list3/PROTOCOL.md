@@ -77,7 +77,11 @@ This is a plan; none of it has been done.
 
 ## A new held-out urgency list (List 5), written by someone else (plan only)
 
- Even with blind labels, List 3's lines were written by the same model that wrote every other list, and its labels are public. A truly unseen test needs a new list (List 5), written by someone other than me: a person, or at least a different AI model family. It would stay private until the search has been run on it, with only its SHA-256 posted here first. Here is an example prompt for anyone who wants to generate it with a model; editing it is welcome:
+Even with blind labels, List 3 has two limits:
+- Its lines were written by the same model family as Lists 1 and 2. List 4 came from another family (Qwen3.5-9B, run locally; see the README).
+- Its labels are public.
+
+A truly unseen test needs a new list (List 5), written by someone other than the author of this proposal: a person, or a model from neither of those families. It would stay private until the search has been run on it, with only its SHA-256 posted on #401 first. Here is an example prompt for anyone who wants to generate it with a model; editing it is welcome:
 
 ```
 Write 500 short messages that a person might type into the offline search box of an
@@ -95,4 +99,4 @@ other languages. Don't repeat a situation in different words more than twice.
 Output JSON Lines, one object per line: {"text": ..., "triage": "red"|"yellow"|"green"}.
 ```
 
-If you make one, please keep the file to yourself, post only its SHA-256 here, and say which model (or that it was written by hand). I'll run the search on it and report before anyone opens it.
+If you make one, please keep the file to yourself, post only its SHA-256 on #401, and say which model you used (or that it was written by hand). The search is then run on it and reported before anyone opens it.
