@@ -467,6 +467,30 @@ SLIDES_UNDISTURBED = {
 }
 TOPS = sorted({*TOPS, *SLIDES_AND_ERUPTIONS, *SLIDES_UNDISTURBED})
 
+# Three short words that start a longer word, from the list in #333 and the benchmark in #430: "rat" starts
+# "rattlesnake" in the snakebite hint, and "out" starts "outage" in the fridge-and-freezer choice. Phrases on the
+# choice that answers each search fix them without touching the matching: [guide, choice] that comes first.
+OUT_AND_RAT = {
+    'rat bite': ['hurt', 'animal-bite'], 'rat bites': ['hurt', 'animal-bite'],
+    'bitten by a rat': ['hurt', 'animal-bite'], 'rodent bite': ['hurt', 'animal-bite'],
+    'out of formula': ['food', 'special'], 'out of baby formula': ['food', 'special'],
+    'running out of formula': ['food', 'special'], 'running low on formula': ['food', 'special'],
+    'out of insulin': ['health', 'chronic'], 'ran out of insulin': ['health', 'chronic'],
+    'running out of insulin': ['health', 'chronic'], 'running low on insulin': ['health', 'chronic'],
+    'out of my prescriptions': ['health', 'chronic'], 'ran out of my medication': ['health', 'chronic'],
+}
+# Searches those phrases must not disturb. "out of" is everyday wording for running low on anything, and the fridge
+# choice is still the right answer for food; a snake bite is still a snake bite; rats in the rubbish are sanitation.
+OUT_AND_RAT_UNDISTURBED = {
+    'out of food': ['food', 'outage'], 'running out of food': ['food', 'outage'],
+    'out of water': ['hurt', 'diarrhea'], 'ran out of water': ['hurt', 'diarrhea'],
+    'out of gas': ['power', 'first-hours'], 'power outage': ['shelter', 'co'],
+    'snake bite': ['hurt', 'snakebite'], 'rattlesnake': ['hurt', 'snakebite'],
+    'rats': ['sanitation', 'garbage'],   # "rat poison" is not pinned here: #331 moves it to the poison choice
+    'formula': ['food', 'special'], 'insulin': ['health', 'chronic'],
+}
+TOPS = sorted({*TOPS, *OUT_AND_RAT, *OUT_AND_RAT_UNDISTURBED})
+
 CASES = {
     'stop': QSTOP, 'fold': list(FOLD), 'match': [m[:2] for m in MATCH], 'rank': ENGLISH, 'topics': TOPICS,
     'rankOwn': RANK_OWN, 'rankForms': [[q, FORM_TOPICS] for q in RANK_FORMS],
@@ -758,6 +782,13 @@ class TopicSearch(unittest.TestCase):
                 with self.subTest(q=q, segmenter=r['segmenter']):
                     self.assertEqual(top[q], [])
 
+
+    def test_out_of_and_rat_reach_the_choice_that_answers_them(self):
+        for r in self.modes:
+            top = dict(zip(TOPS, (ok(e) for e in r['tops'])))
+            for q, first in {**OUT_AND_RAT, **OUT_AND_RAT_UNDISTURBED}.items():
+                with self.subTest(q=q, segmenter=r['segmenter']):
+                    self.assertEqual(top[q][:1], [first])   # an empty result fails, not errors
 
     def test_avalanche_landslide_and_volcano(self):
         for r in self.modes:

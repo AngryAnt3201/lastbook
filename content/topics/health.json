@@ -100,6 +100,8 @@
    "id": "chronic",
    "label": "Diabetes, high blood pressure or heart disease",
    "hint": "Running low on prescriptions, no clinic visits, insulin without a fridge",
+   "phrases": ["out of insulin", "run out of insulin", "running out of insulin", "ran out of insulin", "out of my prescription", "out of my prescriptions", "out of my medication", "out of my medicine", "out of my pills", "out of blood pressure pills", "low on insulin", "low on my prescription", "low on my prescriptions", "low on my medication"],
+   "context": ["ran", "run", "running", "low", "nearly", "almost", "completely", "days", "week", "weeks", "pharmacy", "chemist", "clinic", "refill", "dad", "mom", "mum", "husband", "wife", "diabetic", "diabetes"],
    "read": [
     {
      "doc": "med-a840a35b017c5748",
