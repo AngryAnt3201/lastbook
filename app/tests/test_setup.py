@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path[:0] = [str(HERE.parent), str(ROOT)]
 from engine.setup import api, download, hardware, install, manifest  # noqa: E402
-from app.tests import shorttemp  # noqa: E402
+from app.tests import multipart_fixture, shorttemp  # noqa: E402
 
 ALLOWED = {'127.0.0.1'}     # an address, not 'localhost': Windows tries ::1 first, which the test server does not listen on
 MiB = 1024 * 1024
@@ -1233,6 +1233,67 @@ class Unpacking(Base):
         install.unpack(p, out, self.installed, Control(), lambda d, t: None)
         self.assertEqual(big.stat().st_mtime_ns, t)
         self.assertEqual((lib / 'derived' / 'geo' / 'map.sqlite').stat().st_size, MiB)
+
+
+class SplitPacks(Base):
+    def split_manifest(self):
+        folder = self.tmp / 'fixture'
+        catalog = multipart_fixture.write_fixture(folder)
+        pack = catalog['packs'][0]
+        parts = pack['parts']
+        for file in pack['files'] + parts:
+            name = file['name']
+            file['url'] = f'{self.base}/{name}'
+            self.files.data[name] = (folder / name).read_bytes()
+        self.zip = self.files.data['Lastbook-Small.zip']
+        (self.tmp / 'Lastbook-Small.zip').write_bytes(self.zip)
+        bundled = manifest.validate(catalog, ALLOWED, bundled=True)
+        return manifest.Manifest(bundled=bundled, remote=None, allowed=ALLOWED, context=self.ctx), parts
+
+    def test_only_bundled_catalog_can_supply_parts(self):
+        catalog, parts = self.split_manifest()
+        fetched = manifest.validate(catalog.current, ALLOWED)
+        self.assertNotIn('parts', fetched['packs'][0])
+        self.assertNotIn('parts', catalog.public()['packs'][0])
+        invalid = {**catalog.current, 'packs': [{**catalog.current['packs'][0], 'parts': parts[::-1][1:]}]}
+        self.assertIsNone(manifest.validate(invalid, ALLOWED, bundled=True))
+
+    def test_resumes_split_pack_after_a_missing_part(self):
+        catalog, parts = self.split_manifest()
+        original = 'Lastbook-Small.zip'
+        del self.files.data[original]
+        absent = parts[-1]['name']
+        tail = self.files.data.pop(absent)
+        s = self.setup(manifest=catalog)
+        s.start('small')
+        self.assertEqual(self.wait(s)['error']['code'], 'network')
+        work = self.parent / 'LastbookData.setup' / 'downloads' / 'pack-parts'
+        first, second = (work / part['name'] for part in parts[:2])
+        self.assertEqual(first.read_bytes(), self.zip[:parts[0]['size']])
+        good = second.read_bytes()
+        second.write_bytes(bytes([good[0] ^ 1]) + good[1:])
+        self.files.data[absent] = tail
+        del self.files.data[first.name]  # the verified saved part must be reusable even if its URL is unavailable
+
+        self.files.log.clear()
+        restarted = self.setup(manifest=catalog)
+        restarted.retry()
+        job = self.wait(restarted)
+        self.assertEqual(job['state'], 'done', job)
+        library, note = api.startup(self.settings)
+        self.assertFalse(note.get('error'))
+        self.assertNotIn(first.name, [request[0] for request in self.files.log])
+        self.assertEqual((library / 'library-data' / 'example.txt').read_bytes(), b'A small offline library.\n')
+
+    def test_original_zip_import_still_works_with_a_split_pack(self):
+        catalog, _ = self.split_manifest()
+        self.files.data.clear()
+        source = self.tmp / 'Lastbook-Small.zip'
+        s = self.setup(manifest=catalog)
+        s.use(str(source))
+        job = self.wait(s)
+        self.assertEqual(job['state'], 'done', job)
+        self.assertEqual(source.read_bytes(), self.zip)
 
 
 class Jobs(Base):
