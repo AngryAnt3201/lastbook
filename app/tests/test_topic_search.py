@@ -426,7 +426,7 @@ OUT_AND_RAT_UNDISTURBED = {
     'out of water': ['hurt', 'diarrhea'], 'ran out of water': ['hurt', 'diarrhea'],
     'out of gas': ['power', 'first-hours'], 'power outage': ['shelter', 'co'],
     'snake bite': ['hurt', 'snakebite'], 'rattlesnake': ['hurt', 'snakebite'],
-    'rats': ['sanitation', 'garbage'], 'rat poison': ['hurt', 'snakebite'],
+    'rats': ['sanitation', 'garbage'],   # "rat poison" is not pinned here: #331 moves it to the poison choice
     'formula': ['food', 'special'], 'insulin': ['health', 'chronic'],
 }
 TOPS = sorted({*TOPS, *OUT_AND_RAT, *OUT_AND_RAT_UNDISTURBED})
