@@ -17,7 +17,7 @@ KINDS = {'general', 'ambulance', 'fire', 'police', 'poison', 'crisis', 'other'}
 HOW = {'call', 'sms', 'chat', 'app'}
 WORKS_FROM = {'mobile', 'landline', 'voip'}
 VERIFIED = {'official', 'found_online'}
-COUNTRY_KEYS = {'country', 'code', 'calling_code', 'general', 'services'}
+COUNTRY_KEYS = {'country', 'code', 'calling_code', 'languages', 'general', 'services'}
 SERVICE_KEYS = {'kind', 'name', 'number', 'how', 'works_from', 'works_from_source', 'free', 'free_source', 'keywords',
                 'when', 'source', 'url', 'area_whole_country', 'area', 'checked_on', 'verified'}
 LANG = re.compile(r'[a-z]{2,3}')   # language code of a keyword list: es, en, qu, ay, gn ... (no region: not es-cl)
@@ -65,6 +65,12 @@ def problems(data, name, latest=None):
         out.append(f'{name}: "country" is missing')
     if not CALLING_CODE.match(str(data.get('calling_code', ''))):
         out.append(f'{name}: "calling_code" must be + and digits, such as +56')
+    langs = data.get('languages')
+    langs_ok = (isinstance(langs, list) and bool(langs) and all(isinstance(c, str) and LANG.fullmatch(c) for c in langs)
+                and len(set(langs)) == len(langs))
+    if not langs_ok:
+        out.append(f'{name}: "languages" is required: the country\'s main languages as codes without a region, '
+                   f'such as ["es"], each listed once')
     services = data.get('services')
     if not isinstance(services, list) or not services:
         return out + [f'{name}: "services" must list at least one number']
@@ -92,9 +98,11 @@ def problems(data, name, latest=None):
         if not isinstance(v, list) or not set(v) <= WORKS_FROM:
             out.append(f'{who}: "works_from" must be a list from {sorted(WORKS_FROM)}, empty if the source does not say')
         k = s.get('keywords')
-        if (not isinstance(k, dict) or not words(k.get('en')) or len(k) < 2
-                or not all(isinstance(c, str) and LANG.fullmatch(c) and words(w) for c, w in k.items())):
-            out.append(f'{who}: "keywords" must map language codes to lower-case word lists, with "en" and at least one local language')
+        if not isinstance(k, dict) or not all(isinstance(c, str) and words(w) for c, w in k.items()) or not k:
+            out.append(f'{who}: "keywords" must map language codes to non-empty lower-case word lists')
+        elif langs_ok and set(k) != set(langs) | {'en'}:
+            want = sorted(set(langs) | {'en'})
+            out.append(f'{who}: "keywords" must have exactly the country\'s languages plus "en" {want}, found {sorted(k)}')
         for key in sorted(set(s) - SERVICE_KEYS):
             out.append(f'{who}: unknown key {key!r} (a typo? the allowed keys are in SCHEMA.md)')
         if 'area_whole_country' in s and not isinstance(s['area_whole_country'], bool):
@@ -167,7 +175,7 @@ class Files(unittest.TestCase):
 
 class Checker(unittest.TestCase):
     GOOD = {
-        'country': 'Springfield', 'code': 'ZZ', 'calling_code': '+99', 'general': '911',
+        'country': 'Springfield', 'code': 'ZZ', 'calling_code': '+99', 'languages': ['es'], 'general': '911',
         'services': [{
             'kind': 'general', 'name': 'Emergency', 'number': '911', 'how': ['call'],
             'works_from': ['mobile', 'landline'], 'keywords': {'es': ['emergencia'], 'en': ['emergency']},
@@ -259,17 +267,35 @@ class Checker(unittest.TestCase):
         self.assertTrue(self.bad(general='112'))
 
     def test_keywords_are_tagged_by_language_and_lower_case(self):
-        self.assertFalse(self.bad(s_keywords={'es': ['emergencia'], 'qu': ['ratu'], 'en': ['emergency']}))
+        self.assertFalse(self.bad(languages=['es', 'qu'], s_keywords={'es': ['emergencia'], 'qu': ['ratu'], 'en': ['emergency']}))
         self.assertTrue(self.bad(s_keywords={'es': ['Emergencia'], 'en': ['emergency']}))   # upper case
-        self.assertTrue(self.bad(s_keywords={'es': ['emergencia']}))                        # no English
-        self.assertTrue(self.bad(s_keywords={'en': ['emergency']}))                         # no local language
         self.assertTrue(self.bad(s_keywords={'local': ['emergencia'], 'en': ['emergency']}))  # "local" is not a language
-        self.assertTrue(self.bad(s_keywords={'es': [], 'en': ['emergency']}))
+        self.assertTrue(self.bad(s_keywords={'es': [], 'en': ['emergency']}))                # empty list
+        self.assertTrue(self.bad(s_keywords={}))
+
+    def test_languages_are_required_and_are_codes_without_a_region(self):
+        d = copy.deepcopy(self.GOOD)
+        del d['languages']
+        self.assertTrue(problems(d, 'ZZ.json', latest=date(2026, 11, 22)))                  # missing
+        for v in ([], 'es', ['es', 'es'], ['es-cl'], ['ES'], ['e'], [''], [5], None):
+            self.assertTrue(self.bad(languages=v), repr(v))
+        self.assertFalse(self.bad(languages=['es', 'en'], s_keywords={'es': ['emergencia'], 'en': ['emergency']}))
+
+    def test_keywords_cover_exactly_the_country_languages_plus_english(self):
+        multi = {'languages': ['es', 'qu', 'ay']}
+        full = {'es': ['emergencia'], 'qu': ['ratu'], 'ay': ['jan walt'], 'en': ['emergency']}
+        self.assertFalse(self.bad(s_keywords=full, **multi))
+        for drop in ('es', 'qu', 'ay', 'en'):                    # a language of the country, or English, left out
+            self.assertTrue(self.bad(s_keywords={c: w for c, w in full.items() if c != drop}, **multi), drop)
+        self.assertTrue(self.bad(s_keywords={**full, 'gn': ['mba']}, **multi))                 # a language the country did not list
+        self.assertTrue(self.bad(s_keywords={**full, 'qu': []}, **multi))                      # listed but empty
+        self.assertTrue(self.bad(s_keywords={'es': ['emergencia'], 'en': ['emergency']}, **multi))   # one language of three
 
     def test_a_keyword_language_with_a_region_fails(self):
         # The language only: "es", never "es-cl" (one list of Spanish words serves every Spanish-speaking country).
-        for code in ('es-cl', 'es-CL', 'es_cl', 'es-419', 'ES', 'e', 'espa', 'es\n', ''):
+        for code in ('es-cl', 'es-CL', 'es_cl', 'es-419', 'ES', 'e', 'espa', "es\n", ''):
             self.assertTrue(self.bad(s_keywords={code: ['emergencia'], 'en': ['emergency']}), repr(code))
+            self.assertTrue(self.bad(languages=[code], s_keywords={code: ['emergencia'], 'en': ['emergency']}), repr(code))
         self.assertFalse(self.bad(s_keywords={'es': ['emergencia'], 'en': ['emergency']}))
 
     def test_a_typo_in_a_key_fails(self):

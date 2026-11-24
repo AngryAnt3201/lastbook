@@ -2,6 +2,9 @@
   "country": "Chile",
   "code": "CL",
   "calling_code": "+56",
+  "languages": [
+    "es"
+  ],
   "general": null,
   "services": [
     {
