@@ -340,6 +340,43 @@
     },
     {
       "kind": "other",
+      "name": "Fono Familia (Carabineros)",
+      "number": "149",
+      "how": [
+        "call"
+      ],
+      "works_from": [
+        "mobile",
+        "landline"
+      ],
+      "works_from_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=173931&idParte=8511373",
+      "free": true,
+      "free_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=1059429&idParte=9406426",
+      "keywords": {
+        "es": [
+          "violencia intrafamiliar",
+          "maltrato familiar",
+          "familia",
+          "denuncia",
+          "orientación",
+          "carabineros"
+        ],
+        "en": [
+          "domestic violence",
+          "family violence",
+          "family abuse",
+          "report",
+          "carabineros"
+        ]
+      },
+      "when": "Calls answered by Carabineros staff: information, guidance and reports of mistreatment within the family. It can be called in domestic violence emergencies.",
+      "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
+      "area_whole_country": true,
+      "checked_on": "2026-11-24",
+      "verified": "official"
+    },
+    {
+      "kind": "other",
       "name": "Fono Emergencia Mujer (SernamEG)",
       "number": "1455",
       "how": [
