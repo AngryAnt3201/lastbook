@@ -59,7 +59,8 @@
           "bomberos",
           "incendio",
           "accidente",
-          "rescate"
+          "rescate",
+          "bomberas"
         ],
         "en": [
           "fire",
@@ -93,7 +94,8 @@
           "carabineros",
           "policía",
           "robo",
-          "seguridad"
+          "seguridad",
+          "carabineras"
         ],
         "en": [
           "police",
@@ -199,7 +201,8 @@
           "nave",
           "puerto",
           "mar",
-          "ahogamiento"
+          "ahogamiento",
+          "náufraga"
         ],
         "en": [
           "sea rescue",
@@ -243,7 +246,8 @@
           "cordillera",
           "montaña",
           "rescate",
-          "extraviado"
+          "extraviado",
+          "extraviada"
         ],
         "en": [
           "mountain rescue",
@@ -282,7 +286,8 @@
           "aeronave",
           "extraviado",
           "cordillera",
-          "catástrofe"
+          "catástrofe",
+          "extraviada"
         ],
         "en": [
           "air rescue",
@@ -321,7 +326,9 @@
           "maltrato infantil",
           "abuso sexual",
           "menores",
-          "carabineros"
+          "carabineros",
+          "niñas",
+          "carabineras"
         ],
         "en": [
           "child abuse",
@@ -360,7 +367,8 @@
           "denuncia",
           "orientación",
           "carabineros",
-          "vif"
+          "vif",
+          "carabineras"
         ],
         "en": [
           "domestic violence",
@@ -472,7 +480,9 @@
           "envenenamiento",
           "tóxico",
           "toxicológica",
-          "cituc"
+          "cituc",
+          "tóxica",
+          "toxicológico"
         ],
         "en": [
           "poison",
