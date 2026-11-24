@@ -87,6 +87,10 @@ fails as `checksum`, and a 200 to a Range goes on over one connection from the h
   `settings.json` remembers it as before (`app/main.py`).
 - Work in progress: `<parent>/LastbookData.setup/`, holding `downloads/` (partial files with a `.part` suffix and a
   `.json` beside each: url, size, sha256, bytes done, ETag, and `"parallel": true` while pieces may lie past bytes done; a resume then keeps only the hashed run, so at most `AHEAD` pieces are fetched again) and `unpack/` (the new LastbookData being built).
+  A switch that fails leaves `kept-<time>/LastbookData/` there: the person's files (`models/`, `derived/geo/addresses/`)
+  carried into the staged library before it failed, and named in the error. Setup never deletes it: not a later job, its
+  cancel, nor a later successful setup. The person can delete it once the library in use has its AI and address search
+  again (or they no longer want them); the work folder itself goes once no `kept-*` is left.
 - The model goes to `LastbookData/models/<file>`. After its SHA-256 matches, setup calls `llm_local.mark_checked(path)`, so
   the AI does not read 17 GB a second time.
 - Space needed = download size + unpacked size + 2 GB, on the disk that holds the target. A zip is deleted once it is
