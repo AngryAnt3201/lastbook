@@ -351,7 +351,7 @@
       ],
       "works_from_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=173931&idParte=8511373",
       "free": true,
-      "free_source": "https://www.bcn.cl/leychile/navegar/imprimir?idNorma=1059429&idParte=9406426",
+      "free_source": "https://www.chileatiende.gob.cl/fichas/28630-fono-familia-149",
       "keywords": {
         "es": [
           "violencia intrafamiliar",
@@ -359,18 +359,24 @@
           "familia",
           "denuncia",
           "orientación",
-          "carabineros"
+          "carabineros",
+          "vif"
         ],
         "en": [
           "domestic violence",
           "family violence",
           "family abuse",
           "report",
-          "carabineros"
+          "carabineros",
+          "domestic violence emergency"
         ]
       },
-      "when": "Calls answered by Carabineros staff: information, guidance and reports of mistreatment within the family. It can be called in domestic violence emergencies.",
-      "source": "https://www.bcn.cl/leychile/navegar?idNorma=284665",
+      "when": "Free, confidential support and guidance for people who are or may be victims of domestic violence, with information and referral to public and private services. Open 24 hours, every day of the year. In a domestic violence emergency it reaches Carabineros in the same way as 133.",
+      "source": [
+        "https://www.bcn.cl/leychile/navegar?idNorma=284665",
+        "https://www.chileatiende.gob.cl/fichas/28630-fono-familia-149"
+      ],
+      "url": "https://www.chileatiende.gob.cl/fichas/28630-fono-familia-149",
       "area_whole_country": true,
       "checked_on": "2026-11-24",
       "verified": "official"
