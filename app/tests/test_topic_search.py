@@ -150,9 +150,13 @@ UNDISTURBED = {
     'winter storm': ['shelter', 'cold'], 'furnace smells like gas': ['power', 'gas'], 'gas furnace': ['power', 'gas'],
     'lost in the forest': ['comms', 'signal'],
     'baby formula': ['food', 'special'], 'food allergies': ['food', 'outage'], 'spoiled food': ['food', 'outage'],
-    # "pack" starts "package", so packing searches opened the suspicious package choice. The evacuation choice cites
-    # the reading on what to take (the Five Ps). The last three are guards.
-    'what to pack': ['disaster', 'wildfire'], 'pack a bag': ['disaster', 'wildfire'], 'packing': ['disaster', 'wildfire'],
+    # "pack" starts "package", so packing searches opened the suspicious package choice. The packing choice cites the
+    # two readings on what to take from the guide's own preparation list. Its words are phrases, counted only when
+    # the rest of the search is everyday words, so a search about something else keeps its guide. The rest are guards.
+    'what to pack': ['disaster', 'pack'], 'pack a bag': ['disaster', 'pack'], 'packing': ['disaster', 'pack'],
+    'go bag': ['disaster', 'pack'], 'what to pack to evacuate': ['disaster', 'pack'],
+    'flood packing': ['disaster', 'flood'], 'ice pack': ['disaster', 'explosion'], 'pack wound': ['hurt', 'bleeding'],
+    'what to pack for a hurricane': ['disaster', 'hurricane'], 'sleeping bag': ['disaster', None],
     'suspicious package': ['disaster', 'explosion'], 'unattended package': ['disaster', 'explosion'],
     'take shelter': ['disaster', 'shelter-in-place'],
     'pet food': ['food', 'outage'],
