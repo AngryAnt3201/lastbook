@@ -154,10 +154,19 @@ def country_coverage(d, code):
     return {name: n for name, n in coverage_counts(d, code).items() if not n}
 
 
-def country_publish_blockers(d, code):
-    """Why a country set may not be published, or [] if its opt-in and coverage are both in order."""
+def country_opt_in_blockers(code):
+    """Why a country may not be published at all, or [] if it is opted in. Needs no built set, so an explicit publish
+    request can be refused before the build starts or the publishing client is opened."""
     if code not in PUBLISHED_COUNTRIES:
         return ['publishing a country is opt-in: add it to packaging/country-publication.json only after its source snapshot passes the coverage check']
+    return []
+
+
+def country_publish_blockers(d, code):
+    """Why a country set may not be published, or [] if its opt-in and coverage are both in order."""
+    blockers = country_opt_in_blockers(code)
+    if blockers:
+        return blockers
     missing = country_coverage(d, code)
     return [f'no {name} detail inside the country box' for name in missing]
 
@@ -478,6 +487,11 @@ def main():
             print(exc, file=sys.stderr)
             sys.exit(2)
         sys.exit(dry_run(codes or sorted(PUBLISHED_COUNTRIES, key=lambda c: COUNTRIES[c]), where))
+    todo = regions() if args == ['--order'] else ([] if args[:1] == ['--worker'] else args)
+    for code in todo:
+        blockers = country_opt_in_blockers(code) if code in COUNTRIES else []
+        if blockers:
+            sys.exit(f'{code}: not publishing: {blockers}')
     ctx = _r2().Context()
     if args[:1] == ['--worker']:
         """Take the next unclaimed region in release order until none is left. A failed region is written down and left claimed, for a person to look at."""
@@ -502,7 +516,6 @@ def main():
                     raise
         log(name, 'no states left')
         return
-    todo = regions() if args == ['--order'] else args
     res = json.loads(RESULTS.read_text()) if RESULTS.exists() else {}
     for code in todo:
         if code in res:

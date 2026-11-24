@@ -207,7 +207,7 @@ class CountryPublishing(unittest.TestCase):
         self.assertEqual(json.loads((HERE / 'country-publication.json').read_text(encoding='utf-8'))['countries'], {})
 
 
-class DryRun(unittest.TestCase):
+class CliCase(unittest.TestCase):
     def _cli(self, args):
         old = sys.argv
         out, err = io.StringIO(), io.StringIO()
@@ -219,6 +219,48 @@ class DryRun(unittest.TestCase):
             sys.argv = old
         return caught.exception.code, out.getvalue(), err.getvalue()
 
+
+class ExplicitPublish(CliCase):
+    def test_disabled_country_is_refused_before_build_and_publishing_client(self):
+        built = []
+        old = SM._r2, SM.subprocess.run, SM.PUBLISHED_COUNTRIES
+        SM._r2 = lambda: self.fail('the publishing client was opened for an unpublished country')
+        SM.subprocess.run = lambda *a, **k: built.append(a)
+        SM.PUBLISHED_COUNTRIES = {}
+        try:
+            code, out, err = self._cli([CODE])
+        finally:
+            SM._r2, SM.subprocess.run, SM.PUBLISHED_COUNTRIES = old
+        self.assertEqual(built, [])
+        self.assertEqual(out, '')
+        self.assertIn(CODE, str(code))
+        self.assertIn('publishing a country is opt-in', str(code))
+
+    def test_opted_in_country_still_proceeds_to_the_publishing_run(self):
+        seen = []
+
+        class Client:
+            def Context(self):
+                return 'ctx'
+
+        old = SM._r2, SM.one_state, SM.PUBLISHED_COUNTRIES, SM.RESULTS
+        old_argv = sys.argv
+        SM._r2 = lambda: Client()
+        SM.one_state = lambda ctx, code, res: seen.append((ctx, code))
+        SM.PUBLISHED_COUNTRIES = {CODE: {}}
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                SM.RESULTS = Path(d) / 'results.json'
+                sys.argv = ['state_maps.py', CODE]
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    SM.main()
+        finally:
+            sys.argv = old_argv
+            SM._r2, SM.one_state, SM.PUBLISHED_COUNTRIES, SM.RESULTS = old
+        self.assertEqual(seen, [('ctx', CODE)])
+
+
+class DryRun(CliCase):
     def test_ri_is_rejected_before_any_coverage_query(self):
         old = SM.coverage_counts
         SM.coverage_counts = lambda *a, **k: self.fail('coverage was counted for a non-country code')
