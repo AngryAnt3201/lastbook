@@ -43,12 +43,14 @@ not installed by the requirements files, are never packaged, and are listed with
 
 ## Rules that keep Lastbook what it is
 
-**No network.** The app opens no port and makes no connection, with two exceptions, both started by the person and both
-through `engine/setup/download.py` to the hosts in `ALLOWED_HOSTS` only: setup's downloads, and the Check for updates
-button (`engine/update.py`, `downloads.lastbook.org` only).
+**No network.** The app opens no port. Setup downloads and app update checks use
+`engine/setup/download.py` and reach only the hosts in `ALLOWED_HOSTS`.
 
-- No telemetry, analytics, crash reporting, fonts or scripts from the web, or "phone home" of any kind. The one update check
-  (`engine/update.py`) runs only when the person presses its button, and only says whether a newer version exists.
+- No telemetry, analytics, crash reporting, fonts or scripts from the web. App update checks
+  (`engine/update.py`) use only `downloads.lastbook.org`. The person can check manually or opt into daily notices.
+  Notices default to off. **Open download page** opens the official download page only when the person selects it.
+  **Update now** (Mac builds with a pinned Sparkle and its public key only: `docs/UPDATE-NOW-MAC.md`) starts Sparkle on that click,
+  never before. Sparkle does not check or download in the background.
 - Our own pages (`web/`) contain no web address. The build fails if they do. The desktop **Open GitHub** action hands the fixed project repository address to the system browser after a user click. Lastbook makes no request for that action.
 - A new dependency must work fully offline, and must not open a socket or start a server. Say in the pull request what
   it is, its licence, and why it is needed, and add it to `THIRD_PARTY_NOTICES.md`.

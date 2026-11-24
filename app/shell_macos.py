@@ -781,6 +781,21 @@ def install_menu(app, go=None):
     app.setHelpMenu_(helps.submenu())
 
 
+def _configure_update_now():
+    """About's Update now (app/update_macos.py): reads this app's Info.plist and nothing else. Sparkle loads only when it is pressed."""
+    import plistlib
+    import update_macos
+    from engine import update
+    bundle, info = update._mac_bundle(), {}
+    try:
+        if bundle is not None:
+            with open(bundle / 'Contents' / 'Info.plist', 'rb') as f:
+                info = plistlib.load(f)
+    except Exception:
+        traceback.print_exc()
+    update_macos.configure(update, bundle, info, AppHelper.callAfter)
+
+
 def run(bridge):
     """Show the window and stay here until it closes."""
     app = AppKit.NSApplication.sharedApplication()
@@ -792,6 +807,7 @@ def run(bridge):
     go = shell.go = _Go.alloc().init()
     go.setView_(shell.view)
     install_menu(app, go)
+    _configure_update_now()
     shell.window.makeKeyAndOrderFront_(None)
     if not getattr(sys, 'frozen', False):   # a built app is activated by the system when opened, and left alone when opened in the background
         app.activateIgnoringOtherApps_(True)
