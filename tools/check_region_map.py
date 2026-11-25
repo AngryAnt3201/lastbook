@@ -19,6 +19,7 @@ same calls the app makes. Nothing is written into the region folder or into deri
 Exit status 0 when every check passes. It needs no extra packages.
 """
 import argparse
+import ast
 import hashlib
 import json
 import math
@@ -56,7 +57,7 @@ def help_classes():
     """The classes server.py has a plain name for, read from its source so this tool needs no import for the file checks."""
     text = (REPO / 'server.py').read_text(encoding='utf-8')
     start = text.index('HELP = {')
-    return set(eval(text[start + 7:text.index('}', start) + 1]))  # a literal dict of strings in our own file
+    return set(ast.literal_eval(text[start + 7:text.index('}', start) + 1]))
 
 
 def read_files(root):
@@ -101,6 +102,9 @@ def read_map(root):
     tol = 0.001  # the index stores 32-bit numbers, and outlines are simplified, so an edge feature can sit a hair outside
     out = db.execute('SELECT COUNT(*) FROM feat_idx WHERE maxx<? OR minx>? OR maxy<? OR miny>?', (w - tol, e + tol, s - tol, n + tol)).fetchone()[0]
     check(out == 0, 'every feature touches the box (to 0.001 degrees)')
+    past = db.execute("SELECT COUNT(*) FROM feat_idx i JOIN feat f ON f.id=i.id WHERE f.layer NOT IN ('bldg','island') "
+                      'AND (i.minx<? OR i.maxx>? OR i.miny<? OR i.maxy>?)', (w - tol, e + tol, s - tol, n + tol)).fetchone()[0]
+    check(past == 0, 'roads, railways, water and land are cut at the box (to 0.001 degrees)')
     kinds = dict(db.execute('SELECT cls,COUNT(*) FROM poi GROUP BY cls'))
     check(sum(kinds.values()) > 0, f'there are help points ({sum(kinds.values()):,} in {len(kinds)} classes)')
     unknown = set(kinds) - help_classes()
@@ -118,10 +122,15 @@ def read_map(root):
     check(got == ['id', 'name', 'kind', 'detail', 'lat', 'lon', 'rank', 'source'], 'places.sqlite place has the place finder\'s columns')
     rows = pl.execute('SELECT COUNT(*) FROM place').fetchone()[0]
     check(rows > 0, f'the place finder has rows ({rows:,})')
-    name = pl.execute("SELECT name FROM place WHERE rank=1 AND name<>'' LIMIT 1").fetchone() or pl.execute("SELECT name FROM place LIMIT 1").fetchone()
-    word = name[0].split()[0].replace('"', '')
-    hit = pl.execute('SELECT COUNT(*) FROM place_fts WHERE place_fts MATCH ?', (f'"{word}"*',)).fetchone()[0]
-    check(hit > 0, f'the place finder\'s index finds "{word}" ({hit})')
+    # Search the name column only, and for a name that is not the region's: every detail line can hold the region's
+    # name, so a search for that would pass whatever the index held.
+    region = meta.get('region_name', '').lower()
+    names = [r[0] for r in pl.execute("SELECT name FROM place WHERE name<>'' ORDER BY rank, id LIMIT 200")]
+    name = next((v for v in names if v.split() and v.split()[0].lower() not in region.split()), names[0] if names else '')
+    word = (name.split() or [''])[0].replace('"', '')
+    found = [r[0] for r in pl.execute('SELECT p.name FROM place_fts f JOIN place p ON p.id=f.rowid WHERE place_fts MATCH ?',
+                                      (f'name : "{word}"*',))] if word else []
+    check(name in found, f'the place finder\'s index finds "{name}" by its name ({len(found)} rows for "{word}")')
     return box
 
 

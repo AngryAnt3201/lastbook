@@ -12,6 +12,9 @@ the app already reads (docs/MAPS.md), so the engine and the interface need no ch
   <out>/<id>/map-set.json                      name, files, bytes
   <out>/<id>.build.json                        source, dates, counts, sizes and SHA-256 of each file
 
+It builds in a temporary folder beside <out>/<id> and moves the result into place only when the whole build has
+succeeded. A build that fails or is stopped leaves no <out>/<id>, so the same command can simply be run again.
+
 The rows go in national.sqlite, not map.sqlite, because the engine draws pins from map.sqlite only inside a box
 around Southern California (_poi_sources in server.py).
 
@@ -20,21 +23,30 @@ around Southern California (_poi_sources in server.py).
 
 The only source is the .osm.pbf (OpenStreetMap contributors, ODbL 1.0), which is read and never written.
 Nothing is downloaded. It needs pyosmium, as tools/build_coast.py does. The output folder is new each time:
-the tool refuses to write into a folder that already holds a map, and it never touches derived/geo/.
+the tool refuses to replace a map that is already there, and it never touches derived/geo/.
 
-What it keeps follows tools/build_map.py (same layers, classes and zoom rules), with three differences:
+What it keeps follows tools/build_map.py (same layers, classes and zoom rules), with these differences:
   - it reads raw OpenStreetMap tags, so it can keep a second name: the local name is the label, and the
     English name (name:en), when there is one, goes into the place finder so either script finds the place;
   - the sea is cut to the region's box, whichever side the sea is on (tools/build_coast.py assumes west);
-  - amenity=shelter is kept only when it is not a bus shelter.
-A feature that crosses the box is kept whole. Addresses, terrain, crops and the US-only layers are not built.
+  - roads, railways, water and land that cross the box are cut at its edge (building outlines are kept whole);
+  - amenity=shelter is kept only when it is not a bus shelter;
+  - a health facility tagged only healthcare=* is kept, and funiculars and cable cars are drawn as railways.
+The box usually reaches past the region itself. With --boundary (the id of the region's OpenStreetMap boundary
+relation), only place-finder rows inside that boundary carry the region's name in their detail line.
+Addresses, terrain, crops and the US-only layers are not built.
 """
 import argparse
 import hashlib
 import json
 import math
+import os
+import re
+import shutil
+import signal
 import sqlite3
 import sys
+import tempfile
 import time
 from array import array
 from pathlib import Path
@@ -57,7 +69,8 @@ PLACE_Z = {'city': 6, 'town': 9, 'suburb': 12, 'quarter': 12, 'neighbourhood': 1
            'locality': 14, 'island': 11}
 PLACE_RANK = {'city': 1, 'town': 1, 'suburb': 2, 'quarter': 2, 'village': 2, 'neighbourhood': 3, 'hamlet': 3,
               'locality': 3, 'island': 3}
-RAIL = {'rail', 'light_rail', 'subway', 'tram', 'monorail', 'narrow_gauge'}
+RAIL = {'rail', 'light_rail', 'subway', 'tram', 'monorail', 'narrow_gauge', 'funicular'}
+AERIALWAY = {'cable_car', 'gondola', 'mixed_lift'}  # public transport in some cities; drawn with the railways
 WATERWAY = {'river', 'stream', 'canal', 'drain', 'ditch'}
 # Help points: the classes tools/build_map.py keeps (POI_KEEP), found from raw tags.
 AMENITY = {'hospital': 'hospital', 'clinic': 'clinic', 'doctors': 'doctors', 'pharmacy': 'pharmacy', 'dentist': 'dentist',
@@ -70,6 +83,9 @@ AMENITY = {'hospital': 'hospital', 'clinic': 'clinic', 'doctors': 'doctors', 'ph
 SHOP = {'supermarket': 'supermarket', 'convenience': 'convenience', 'doityourself': 'doityourself',
         'hardware': 'hardware', 'garden_centre': 'garden_centre', 'chemist': 'chemist', 'bicycle': 'bicycle_shop',
         'car_repair': 'car_repair'}
+# healthcare=* is read only when amenity gives no class: many clinics and health posts carry this tag alone
+HEALTHCARE = {'hospital': 'hospital', 'clinic': 'clinic', 'centre': 'clinic', 'doctor': 'doctors', 'pharmacy': 'pharmacy',
+              'dentist': 'dentist'}
 MAN_MADE = {'water_tower': 'water_tower', 'water_works': 'water_works', 'wastewater_plant': 'wastewater_plant'}
 BUS_SHELTER = {'public_transport', 'bus', 'taxi'}
 
@@ -80,6 +96,9 @@ def poi_class(t):
         if a == 'shelter' and t.get('shelter_type') in BUS_SHELTER:
             return None
         return AMENITY[a]
+    hc = t.get('healthcare')
+    if hc in HEALTHCARE:
+        return HEALTHCARE[hc]
     s = t.get('shop')
     if s in SHOP:
         return SHOP[s]
@@ -188,6 +207,68 @@ def clip_line(pts, box):
     return [p for p in pieces if len(p) > 1]
 
 
+def clip_ring(flat, box):
+    """A closed ring (flat x,y list) cut to the box, one box edge at a time (Sutherland-Hodgman). [] if nothing is left."""
+    pts = list(zip(flat[0::2], flat[1::2]))
+    if pts[0] == pts[-1]:
+        pts.pop()
+    w, s, e, n = box
+    for axis, edge, above in ((0, w, True), (0, e, False), (1, s, True), (1, n, False)):
+        out = []
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            ia = a[axis] >= edge if above else a[axis] <= edge
+            ib = b[axis] >= edge if above else b[axis] <= edge
+            if ia:
+                out.append(a)
+            if ia != ib:
+                t = (edge - a[axis]) / (b[axis] - a[axis])
+                out.append((edge, a[1] + t * (b[1] - a[1])) if axis == 0 else (a[0] + t * (b[0] - a[0]), edge))
+        pts = out
+        if len(pts) < 3:
+            return []
+    return [v for p in pts + pts[:1] for v in p]
+
+
+def cut(parts, box, ring):
+    """Parts (flat x,y lists) cut to the box: rings stay closed, lines may come back as several pieces."""
+    minx, maxx, miny, maxy = bounds(parts)
+    w, s, e, n = box
+    if minx >= w and maxx <= e and miny >= s and maxy <= n:
+        return parts
+    if ring:
+        return [r for r in (clip_ring(p, box) for p in parts) if len(r) >= 8]
+    return [[v for pt in piece for v in pt] for p in parts for piece in clip_line(list(zip(p[0::2], p[1::2])), box)]
+
+
+class Boundary:
+    """Whether a point is inside a boundary's rings (even-odd rule). Edges are sorted into latitude bands, so a
+    test looks only at the edges that pass the point's latitude."""
+    BANDS = 512
+
+    def __init__(self, rings):
+        ys = [y for ring in rings for _, y in ring]
+        self.south, self.north = min(ys), max(ys)
+        self.step = (self.north - self.south) / self.BANDS or 1.0
+        self.bands = [[] for _ in range(self.BANDS)]
+        for ring in rings:
+            for (x0, y0), (x1, y1) in zip(ring, ring[1:]):
+                if y0 != y1:
+                    for k in range(self.band(min(y0, y1)), self.band(max(y0, y1)) + 1):
+                        self.bands[k].append((x0, y0, x1, y1))
+
+    def band(self, y):
+        return min(self.BANDS - 1, max(0, int((y - self.south) / self.step)))
+
+    def holds(self, lon, lat):
+        if not self.south <= lat <= self.north:
+            return False
+        inside = False
+        for x0, y0, x1, y1 in self.bands[self.band(lat)]:
+            if (y0 > lat) != (y1 > lat) and lon < x0 + (lat - y0) * (x1 - x0) / (y1 - y0):
+                inside = not inside
+        return inside
+
+
 def edge_pos(p, box):
     """Distance clockwise round the box edge from its north-west corner, or None if the point is not on the edge."""
     w, s, e, n = box
@@ -265,11 +346,11 @@ def chains(ways):
 
 # ------------------------------------------------------------------ reading the extract
 class Region(osmium.SimpleHandler):
-    def __init__(self, box, prefer):
+    def __init__(self, box, prefer, boundary=None):
         super().__init__()
-        self.box, self.prefer = box, prefer
+        self.box, self.prefer, self.boundary = box, prefer, boundary
         self.feats, self.pois, self.places, self.coast = [], [], [], []
-        self.seen_area_ways = set()
+        self.boundary_rings = []
 
     def touches(self, minx, maxx, miny, maxy):
         w, s, e, n = self.box
@@ -282,7 +363,10 @@ class Region(osmium.SimpleHandler):
             return en, (local if local and local != en else None)
         return (local or en), (en if local and en and en != local else None)
 
-    def add(self, layer, cls, name, minz, parts):
+    def add(self, layer, cls, name, minz, parts, ring=None):
+        """Keep a feature. ring says how to cut it to the box: True for outlines, False for lines, None to keep it whole."""
+        if ring is not None:
+            parts = cut(parts, self.box, ring)
         if parts:
             self.feats.append((layer, cls, name, minz, parts))
 
@@ -312,9 +396,9 @@ class Region(osmium.SimpleHandler):
 
     def way(self, w):
         t = w.tags
-        hw, ww, rw = t.get('highway'), t.get('waterway'), t.get('railway')
+        hw, ww, rw, aw = t.get('highway'), t.get('waterway'), t.get('railway'), t.get('aerialway')
         coast = t.get('natural') == 'coastline'
-        if not (coast or hw or ww in WATERWAY or rw in RAIL):
+        if not (coast or hw or ww in WATERWAY or rw in RAIL or aw in AERIALWAY):
             return
         try:
             flat = [v for n in w.nodes for v in (n.lon, n.lat)]
@@ -330,13 +414,21 @@ class Region(osmium.SimpleHandler):
             if hw == 'track' and t.get('tracktype') in ('grade1', 'grade2', 'grade3', 'grade4', 'grade5'):
                 hw = 'track_' + t.get('tracktype')
             if hw in ROAD_Z and t.get('area') != 'yes':
-                self.add('road', hw, label or t.get('ref'), ROAD_Z[hw], [flat])
+                self.add('road', hw, label or t.get('ref'), ROAD_Z[hw], [flat], ring=False)
         elif ww in WATERWAY:
-            self.add('waterway', ww, label, 10 if ww == 'river' else 13, [flat])
+            self.add('waterway', ww, label, 10 if ww == 'river' else 13, [flat], ring=False)
         elif rw in RAIL and t.get('service') not in ('yard', 'siding', 'spur'):
-            self.add('rail', rw, label, 10 if rw == 'rail' else 13, [flat])
+            self.add('rail', rw, label, 10 if rw == 'rail' else 13, [flat], ring=False)
+        elif aw in AERIALWAY:
+            self.add('rail', aw, label, 13, [flat], ring=False)
 
     def area(self, a):
+        if self.boundary and not a.from_way() and a.orig_id() == self.boundary:
+            try:
+                self.boundary_rings = [[(n.lon, n.lat) for n in ring] for outer in a.outer_rings()
+                                       for ring in [outer] + list(a.inner_rings(outer))]
+            except osmium.InvalidLocationError:
+                pass
         t = a.tags
         nat, lu, lei = t.get('natural'), t.get('landuse'), t.get('leisure')
         bld = t.get('building')
@@ -366,15 +458,15 @@ class Region(osmium.SimpleHandler):
         if water or wet:
             kind = 'wetland' if wet else ('reservoir' if lu in ('reservoir', 'basin') or t.get('water') == 'reservoir'
                                          else 'river' if t.get('water') in ('river', 'canal') or t.get('waterway') else 'water')
-            self.add('wet' if wet else 'water', kind, label, area_z(*b, 7), [simplify(r, 0.00001) for r in rings])
+            self.add('wet' if wet else 'water', kind, label, area_z(*b, 7), [simplify(r, 0.00001) for r in rings], ring=True)
         elif nat == 'beach':
-            self.add('beach', 'beach', label, area_z(*b, 10), rings)
+            self.add('beach', 'beach', label, area_z(*b, 10), rings, ring=True)
         elif bld:
             self.add('bldg', '' if bld == 'yes' else bld, None, 15, [simplify(rings[0], 0.000002)])
         elif park:
-            self.add('land', 'park', None, area_z(*b, 8), [simplify(r, 0.00002) for r in rings])
+            self.add('land', 'park', None, area_z(*b, 8), [simplify(r, 0.00002) for r in rings], ring=True)
         elif land:
-            self.add('land', land, label, area_z(*b, 9), [simplify(r, 0.00001) for r in rings])
+            self.add('land', land, label, area_z(*b, 9), [simplify(r, 0.00001) for r in rings], ring=True)
 
 
 def sha256(path):
@@ -385,132 +477,192 @@ def sha256(path):
     return h.hexdigest()
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('pbf', help='an OpenStreetMap extract (.osm.pbf), for example from download.geofabrik.de')
-    ap.add_argument('--id', required=True, help='region id, for example TH-10')
-    ap.add_argument('--name', required=True, help='region name in plain words, for example Bangkok')
-    ap.add_argument('--bbox', required=True, help='west,south,east,north in degrees')
-    ap.add_argument('--out', required=True, help='folder for the output; <out>/<id> must not exist yet')
-    ap.add_argument('--prefer', choices=('local', 'en'), default='local',
-                    help='which name is the map label when a feature has both (default: the local name)')
-    ap.add_argument('--no-buildings', action='store_true', help='leave building outlines out (a smaller file)')
-    args = ap.parse_args()
-    box = [float(v) for v in args.bbox.split(',')]
-    if len(box) != 4 or not (box[0] < box[2] and box[1] < box[3]):
-        sys.exit('--bbox must be west,south,east,north')
-    pbf = Path(args.pbf)
-    root = Path(args.out) / args.id
-    if root.exists():
-        sys.exit(f'{root} already exists. Choose another --out, or remove it yourself.')
-    geo = root / 'derived' / 'geo'
-    geo.mkdir(parents=True)
-    t0 = time.time()
+# ------------------------------------------------------------------ writing the map set
+SCHEMA = '''PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;
+  CREATE TABLE feat(id INTEGER PRIMARY KEY, layer TEXT, cls TEXT, name TEXT, minz INTEGER, geom BLOB);
+  CREATE VIRTUAL TABLE feat_idx USING rtree(id, minx, maxx, miny, maxy, minz, maxz);
+  CREATE TABLE poi(id INTEGER PRIMARY KEY, cls TEXT, name TEXT, lon REAL, lat REAL);
+  CREATE INDEX poi_cls ON poi(cls, lon, lat);
+  CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);'''
+LAYER_ORDER = {'water': 0, 'wet': 0, 'beach': 1, 'land': 1, 'waterway': 2, 'rail': 2, 'road': 3, 'bldg': 4, 'place': 5}
+GEO_NAMES = ('national.sqlite', 'map.sqlite', 'places.sqlite', 'national-status.json', 'socal-cells.json')
 
-    header = osmium.io.Reader(str(pbf)).header()
-    as_of = header.get('osmosis_replication_timestamp') or header.get('timestamp') or ''
-    h = Region(box, args.prefer)
-    h.apply_file(str(pbf), locations=True, idx='flex_mem')
-    print('read', len(h.feats), 'features', len(h.pois), 'help points', len(h.places), 'places',
-          len(h.coast), 'coast ways', round(time.time() - t0), 's', flush=True)
 
-    # ---- national.sqlite holds the rows; map.sqlite is the same tables with none, as in a state map
-    schema = '''PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;
-      CREATE TABLE feat(id INTEGER PRIMARY KEY, layer TEXT, cls TEXT, name TEXT, minz INTEGER, geom BLOB);
-      CREATE VIRTUAL TABLE feat_idx USING rtree(id, minx, maxx, miny, maxy, minz, maxz);
-      CREATE TABLE poi(id INTEGER PRIMARY KEY, cls TEXT, name TEXT, lon REAL, lat REAL);
-      CREATE INDEX poi_cls ON poi(cls, lon, lat);
-      CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);'''
+def unique_pois(pois):
+    """Help points with exact repeats dropped (the same class and name at the same spot)."""
+    seen = set()
+    for cls, label, other, lon, lat in pois:
+        key = (cls, label, round(lon, 5), round(lat, 5))
+        if key not in seen:
+            seen.add(key)
+            yield cls, label, other, lon, lat
+
+
+def write_map(geo, h, box, meta, buildings=True):
+    """national.sqlite holds the rows; map.sqlite is the same tables with none, as in a state map.
+    Returns (features by layer, help points by class)."""
     dst = sqlite3.connect(geo / 'national.sqlite')
-    dst.executescript(schema)
+    dst.executescript(SCHEMA)
     fid = 0
-    count = {}
-    order = {'water': 0, 'wet': 0, 'beach': 1, 'land': 1, 'waterway': 2, 'rail': 2, 'road': 3, 'bldg': 4, 'place': 5}
-    for layer, cls, name, minz, parts in sorted(h.feats, key=lambda f: order[f[0]]):
-        if layer == 'bldg' and args.no_buildings:
-            continue
+    count, kinds = {}, {}
+
+    def feature(layer, cls, name, minz, parts):
+        nonlocal fid
         fid += 1
         dst.execute('INSERT INTO feat VALUES (?,?,?,?,?,?)', (fid, layer, cls, name, minz, pack(parts)))
         dst.execute('INSERT INTO feat_idx VALUES (?,?,?,?,?,?,?)', (fid, *bounds(parts), minz, 30))
         count[layer] = count.get(layer, 0) + 1
+
+    for layer, cls, name, minz, parts in sorted(h.feats, key=lambda f: LAYER_ORDER[f[0]]):
+        if layer != 'bldg' or buildings:
+            feature(layer, cls, name, minz, parts)
     # the sea, cut to the box; closed coastline rings inside the box are islands, drawn as land on top
     cs = chains(h.coast)
-    pieces = [piece for closed, pts in cs if not closed for piece in clip_line(pts, box)]
-    rings = sea_rings(pieces, box)
+    sea = sea_rings([piece for closed, pts in cs if not closed for piece in clip_line(pts, box)], box)
     islands = [pts for closed, pts in cs if closed]
-    for layer, group in (('ocean', rings), ('island', islands)):
+    for layer, group in (('ocean', sea), ('island', islands)):
         for ring in group:
-            flat = [v for p in ring for v in p]
-            fid += 1
-            dst.execute('INSERT INTO feat VALUES (?,?,?,?,?,?)', (fid, layer, layer, None, 0, pack([flat])))
-            dst.execute('INSERT INTO feat_idx VALUES (?,?,?,?,?,?,?)', (fid, *bounds([flat]), 0, 30))
-            count[layer] = count.get(layer, 0) + 1
-    seen = set()
-    pid = 0
-    kinds = {}
-    for cls, label, other, lon, lat in h.pois:
-        key = (cls, label, round(lon, 5), round(lat, 5))
-        if key in seen:
-            continue
-        seen.add(key)
-        pid += 1
+            feature(layer, layer, None, 0, [[v for p in ring for v in p]])
+    for pid, (cls, label, _, lon, lat) in enumerate(unique_pois(h.pois), 1):
         dst.execute('INSERT INTO poi VALUES (?,?,?,?,?)', (pid, cls, label, lon, lat))
         kinds[cls] = kinds.get(cls, 0) + 1
     status = {'state': 'complete', 'stage': 'ready', 'features': fid}
-    meta = [('source', f'OpenStreetMap contributors, via {pbf.name} (ODbL 1.0)'), ('data_as_of', as_of),
-            ('bounds', ','.join(f'{v:.6f}' for v in box)), ('region', args.id), ('region_name', args.name)]
     # no build time in the files: the same extract and options give the same bytes, so a checksum can be compared
     dst.executemany('INSERT INTO meta VALUES (?,?)', meta + [('status', json.dumps(status))])
     dst.commit()
     dst.execute('VACUUM')
     dst.close()
     empty = sqlite3.connect(geo / 'map.sqlite')
-    empty.executescript(schema)
+    empty.executescript(SCHEMA)
     empty.executemany('INSERT INTO meta VALUES (?,?)', meta)
     empty.commit()
     empty.close()
     (geo / 'national-status.json').write_text(json.dumps(status), encoding='utf-8')
     (geo / 'socal-cells.json').write_text('[]', encoding='utf-8')
+    return count, kinds
 
-    # ---- places.sqlite: the place finder, in the shape tools/build_places.py writes
+
+def write_places(geo, h, name, boundary=None):
+    """places.sqlite: the place finder, in the shape tools/build_places.py writes. A row's detail line names the
+    region, unless a boundary was given and the row lies outside it. Returns (rows, rows outside the boundary)."""
     db = sqlite3.connect(geo / 'places.sqlite')
     db.executescript('''CREATE TABLE place(id INTEGER PRIMARY KEY, name TEXT, kind TEXT, detail TEXT, lat REAL, lon REAL, rank INTEGER, source TEXT);
       CREATE VIRTUAL TABLE place_fts USING fts5(name, detail, content='place', content_rowid='id', tokenize='unicode61');''')
-    ins = 'INSERT INTO place(name,kind,detail,lat,lon,rank,source) VALUES (?,?,?,?,?,?,?)'
-    where = f'{args.name} (OpenStreetMap)'
-    nplaces = 0
-    for place, label, other, lon, lat in h.places:
-        db.execute(ins, (label, place, f'{other} · {where}' if other else where, lat, lon, PLACE_RANK[place], 'OpenStreetMap'))
-        nplaces += 1
-    seen = set()
-    for cls, label, other, lon, lat in h.pois:
-        key = (cls, label, round(lon, 5), round(lat, 5))
-        if not label or key in seen:
-            continue
-        seen.add(key)
-        db.execute(ins, (label, cls.replace('_', ' '), f'{other} · {where}' if other else where, lat, lon, 4, 'OpenStreetMap'))
-        nplaces += 1
+    rows = [(label, place, other, lon, lat, PLACE_RANK[place]) for place, label, other, lon, lat in h.places]
+    rows += [(label, cls.replace('_', ' '), other, lon, lat, 4) for cls, label, other, lon, lat in unique_pois(h.pois) if label]
+    outside = 0
+    for label, kind, other, lon, lat, rank in rows:
+        where = f'{name} (OpenStreetMap)'
+        if boundary and not boundary.holds(lon, lat):
+            where = 'OpenStreetMap'
+            outside += 1
+        db.execute('INSERT INTO place(name,kind,detail,lat,lon,rank,source) VALUES (?,?,?,?,?,?,?)',
+                   (label, kind, f'{other} · {where}' if other else where, lat, lon, rank, 'OpenStreetMap'))
     db.execute("INSERT INTO place_fts(place_fts) VALUES ('rebuild')")
     db.commit()
     db.execute('VACUUM')
     db.close()
+    return len(rows), outside
 
-    files = {f'derived/geo/{n}': (geo / n).stat().st_size
-             for n in ('national.sqlite', 'map.sqlite', 'places.sqlite', 'national-status.json', 'socal-cells.json')}
-    (root / 'map-set.json').write_text(json.dumps(
-        {'name': args.id, 'files': files, 'bytes': sum(files.values())}, indent=1),
-        encoding='utf-8')
+
+def build(args, box, root):
+    """Read the extract and write the whole map set into root, an empty folder. Returns the build report."""
+    t0 = time.time()
+    pbf = Path(args.pbf)
+    geo = root / 'derived' / 'geo'
+    geo.mkdir(parents=True)
+    header = osmium.io.Reader(str(pbf)).header()
+    as_of = header.get('osmosis_replication_timestamp') or header.get('timestamp') or ''
+    h = Region(box, args.prefer, args.boundary)
+    h.apply_file(str(pbf), locations=True, idx='flex_mem')
+    print('read', len(h.feats), 'features', len(h.pois), 'help points', len(h.places), 'places',
+          len(h.coast), 'coast ways', round(time.time() - t0), 's', flush=True)
+    boundary = None
+    if args.boundary:
+        if not h.boundary_rings:
+            raise SystemExit(f'--boundary: relation {args.boundary} is not a complete boundary or multipolygon in {pbf.name}')
+        boundary = Boundary(h.boundary_rings)
+
+    meta = [('source', f'OpenStreetMap contributors, via {pbf.name} (ODbL 1.0)'), ('data_as_of', as_of),
+            ('bounds', ','.join(f'{v:.6f}' for v in box)), ('region', args.id), ('region_name', args.name)]
+    if args.boundary:
+        meta.append(('boundary', f'OpenStreetMap relation {args.boundary}'))
+    count, kinds = write_map(geo, h, box, meta, buildings=not args.no_buildings)
+    nplaces, outside = write_places(geo, h, args.name, boundary)
+
+    files = {f'derived/geo/{n}': (geo / n).stat().st_size for n in GEO_NAMES}
+    (root / 'map-set.json').write_text(json.dumps({'name': args.id, 'files': files, 'bytes': sum(files.values())}, indent=1),
+                                       encoding='utf-8')
     report = {
         'id': args.id, 'name': args.name, 'bbox': box, 'label_names': args.prefer,
         'source': {'file': pbf.name, 'bytes': pbf.stat().st_size, 'sha256': sha256(pbf), 'data_as_of': as_of,
                    'licence': 'ODbL 1.0', 'attribution': '© OpenStreetMap contributors'},
-        'features': count, 'help_points': dict(sorted(kinds.items())), 'help_points_total': pid, 'place_finder_rows': nplaces,
+        'features': count, 'help_points': dict(sorted(kinds.items())), 'help_points_total': sum(kinds.values()),
+        'place_finder_rows': nplaces,
         'files': {rel: {'bytes': size, 'sha256': sha256(root / rel)} for rel, size in files.items()},
         'not_built': ['addresses', 'terrain', 'crops', 'buildings.sqlite (outlines are in national.sqlite)', 'water.sqlite', 'atlas.sqlite'],
         'built': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'seconds': round(time.time() - t0)}
-    Path(str(root) + '.build.json').write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding='utf-8')
+    if args.boundary:
+        report['boundary'] = {'relation': args.boundary, 'place_finder_rows_inside': nplaces - outside,
+                              'place_finder_rows_outside': outside}
+    return report
+
+
+def region_id(text):
+    """--id becomes a folder name, so it must be exactly one: no separators, no '..', nothing hidden."""
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', text) or text.endswith('.'):
+        raise argparse.ArgumentTypeError(
+            f'{text!r} is not a single folder name: use letters, digits, "-", "_" and ".", starting with a letter or digit')
+    return text
+
+
+def bbox(text):
+    try:
+        box = [float(v) for v in text.split(',')]
+    except ValueError:
+        box = []
+    if len(box) != 4 or not (box[0] < box[2] and box[1] < box[3]):
+        raise argparse.ArgumentTypeError('must be west,south,east,north in degrees')
+    return box
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap.add_argument('pbf', help='an OpenStreetMap extract (.osm.pbf), for example from download.geofabrik.de')
+    ap.add_argument('--id', required=True, type=region_id, help='region id, for example TH-10; it names the output folder')
+    ap.add_argument('--name', required=True, help='region name in plain words, for example Bangkok')
+    ap.add_argument('--bbox', required=True, type=bbox, help='west,south,east,north in degrees')
+    ap.add_argument('--out', required=True, help='folder for the output; <out>/<id> must not exist yet')
+    ap.add_argument('--boundary', type=int, metavar='RELATION',
+                    help="id of the region's OpenStreetMap boundary relation; place-finder rows outside it do not get --name")
+    ap.add_argument('--prefer', choices=('local', 'en'), default='local',
+                    help='which name is the map label when a feature has both (default: the local name)')
+    ap.add_argument('--no-buildings', action='store_true', help='leave building outlines out (a smaller file)')
+    args = ap.parse_args(argv)
+    out = Path(args.out)
+    root, report_path = out / args.id, out / f'{args.id}.build.json'
+    if root.exists():
+        sys.exit(f'{root} already exists. Choose another --out, or remove it yourself.')
+    if not Path(args.pbf).is_file():
+        sys.exit(f'{args.pbf} is not a file')
+    out.mkdir(parents=True, exist_ok=True)
+    # Everything is written to a temporary folder beside the destination (the same disk, so the last step is a
+    # rename) and moved into place only after the whole build has succeeded. Whatever stops the build, the
+    # temporary folder is removed and <out>/<id> does not exist, so the same command can be run again.
+    work = Path(tempfile.mkdtemp(prefix=f'.{args.id}.building-', dir=out))
+    try:
+        report = build(args, args.bbox, work / 'map')
+        (work / 'build.json').write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding='utf-8')
+        try:
+            os.rename(work / 'map', root)
+        except OSError:
+            sys.exit(f'{root} appeared while this build was running; it was left as it is.')
+        os.replace(work / 'build.json', report_path)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     print(json.dumps(report, indent=1, ensure_ascii=False))
 
 
 if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # a plain kill also cleans up, as Ctrl-C does
     main()
