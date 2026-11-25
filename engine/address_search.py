@@ -32,6 +32,10 @@ for number, word in enumerate(ORDINALS):
     suffix = 'th' if 10 <= number % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(number % 10, 'th')
     TO_DIGITS[word] = f'{number}{suffix}'
 TO_WORDS = {value: key for key, value in TO_DIGITS.items()}
+# How a street can end. Three of these are also state codes: Ct (Court, Connecticut), Mt (Mount, Montana), NE (northeast, Nebraska).
+STREET_ENDINGS = set(WORDS.values()) | {'ne', 'nw', 'se', 'sw'}
+DIAGONALS = {'ne': 'northeast', 'nw': 'northwest', 'se': 'southeast', 'sw': 'southwest'}
+DIAGONALS.update({full: short for short, full in DIAGONALS.copy().items()})
 
 
 def normalize(text):
@@ -48,21 +52,32 @@ def street_forms(street):
     forms = [street, ' '.join(TO_DIGITS.get(word, word) for word in words),
              ' '.join(TO_WORDS.get(word, word) for word in words)]
     forms += [re.sub(r'\b(\d+)(st|nd|rd|th)\b', r'\1', form) for form in forms[:]]
-    if words[0] not in ('n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'):
+    # Existing indexes keep both spellings, so try each without changing their normalization.
+    for position in (0, -1):
+        for form in forms[:]:
+            parts = form.split()
+            if parts[position] in DIAGONALS:
+                parts[position] = DIAGONALS[parts[position]]
+                forms.append(' '.join(parts))
+    if words[0] not in ('n', 's', 'e', 'w') and words[0] not in DIAGONALS:
         forms += [f'{direction} {form}' for form in forms[:] for direction in ('n', 's', 'e', 'w')]
     return list(dict.fromkeys(forms))
 
 
-def _parts(query):
+def _parts(query, states=True):
     number, remainder = query.strip().split(None, 1)
     number = number.upper()
     remainder = re.sub(r'[^a-z0-9 ]+', ' ', remainder.lower()).split()
+    # A ZIP+4 ("62704-1234", or "62704 1234" once the hyphen is gone) is the same place as its five-digit ZIP, which the
+    # index keeps: drop the four extra digits so the ZIP and the state before it are still read.
+    if len(remainder) > 1 and re.fullmatch(r'\d{4}', remainder[-1]) and re.fullmatch(r'\d{5}', remainder[-2]):
+        remainder.pop()
     postcode = ''
     if remainder and re.fullmatch(r'\d{5}', remainder[-1]):
         postcode = remainder.pop()
     state = ''
     for count in (3, 2, 1):
-        if len(remainder) <= count:
+        if not states or len(remainder) <= count:
             continue
         name = ' '.join(remainder[-count:])
         code = STATES.get(name) or (name.upper() if count == 1 and name.upper() in STATE_CODES else '')
@@ -70,14 +85,36 @@ def _parts(query):
             state = code
             remainder = remainder[:-count]
             break
-    return number, normalize(' '.join(remainder)).split(), state, postcode
+    return number, normalize(' '.join(remainder)).split(), state, postcode, remainder
+
+
+def _readings(query):
+    """The ways to read a query, likeliest first, as (number, words, state, postcode, plain, town).
+    Words at the end that name a state can also be the street's own ending ('12 Oak Ct', '500 4th St NE') or a town
+    ('Washington'), so the query is read both ways. The second reading stays narrow, so that a state that is not installed
+    still finds nothing: a two-letter code is tried only as part of the street (town ''), and a state's name only as a town
+    of exactly that name (town 'whole'). '100 Main St IN' does not find Inglewood, nor 'Maple Ave Kansas' Kansas City."""
+    number, words, state, postcode, plain = _parts(query)
+    if not state:
+        return [(number, words, state, postcode, plain, 'starts')]
+    typed = _parts(query, states=False)
+    code = len(typed[1]) == len(words) + 1 and typed[1][-1].upper() in STATE_CODES
+    by_state, as_typed = (number, words, state, postcode, plain, 'starts'), (*typed, '' if code else 'whole')
+    return [as_typed, by_state] if code and typed[1][-1] in STREET_ENDINGS else [by_state, as_typed]
 
 
 def find_addresses(query, geo_directory, limit=8, near=None):
     """Return exact house-number matches from installed indexes, never a guessed house."""
     if not is_address_query(query):
         return []
-    number, words, state, postcode = _parts(query)
+    for reading in _readings(query):
+        found = _lookup(*reading, geo_directory, limit, near)
+        if found:
+            return found
+    return []
+
+
+def _lookup(number, words, state, postcode, plain, town, geo_directory, limit, near):
     if not words:
         return []
     geo_directory = Path(geo_directory)
@@ -94,7 +131,7 @@ def find_addresses(query, geo_directory, limit=8, near=None):
                 connections.append(sqlite3.connect(ro_uri(path), uri=True))
             except sqlite3.Error:
                 continue
-        for count in range(len(words), 0, -1):
+        for count in range(len(words), 0 if town else len(words) - 1, -1):
             street = ' '.join(words[:count])
             if all(word in set(WORDS.values()) for word in words[:count]):
                 continue
@@ -110,13 +147,31 @@ def find_addresses(query, geo_directory, limit=8, near=None):
                     conditions.append('zip = ?')
                     parameters.append(postcode)
                 if city:
-                    conditions.append('lower(city) LIKE ?')
-                    parameters.append(city + '%')
+                    # normalize() keeps a word's first letter (north->n, saint->st, mount->mt) and only strips
+                    # punctuation, so this cheap SQL prefilter never drops a row the Python city check would keep.
+                    conditions.append('lower(substr(city,1,1)) = ?')
+                    parameters.append(city[0])
+                # The city is compared in Python, after normalize() on both sides: the query's "north", "saint" and
+                # punctuation must meet the stored "North Hollywood", "Saint Paul" and "St. Louis" in the same form.
                 sql = ('SELECT num,street,city,state,zip,lat,lon,norm FROM addr WHERE '
-                       + ' AND '.join(conditions) + ' ORDER BY length(norm),norm LIMIT ?')
+                       + ' AND '.join(conditions) + ' ORDER BY length(norm),norm')
+                if not city:
+                    sql += ' LIMIT ?'
+                    parameters.append(limit * 3)
+                plain_city = ' '.join(plain[count:])   # normalize() maps word for word, so the split lines up
+                match = str.__eq__ if town == 'whole' else str.startswith   # 'whole': a state's name read as a town of just that name
                 for connection in connections:
+                    # Rows the city check drops must not use up the limit, so read on until enough pass it.
+                    kept = 0
                     try:
-                        rows.extend(connection.execute(sql, [*parameters, limit * 3]).fetchall())
+                        for row in connection.execute(sql, parameters):
+                            stored = row[2] or ''
+                            if city and not (match(normalize(stored), city) or match(stored.lower(), plain_city)):
+                                continue
+                            rows.append(row)
+                            kept += 1
+                            if kept == limit * 3:
+                                break
                     except sqlite3.Error:
                         continue
             if rows:
